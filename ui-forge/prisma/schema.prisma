@@ -1,0 +1,156 @@
+// prisma/schema.prisma
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// =========================================================
+// 1. NEXTAUTH / AUTH.JS STANDARD MODELS
+// =========================================================
+
+model Account {
+  id                String  @id @default(uuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(uuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model User {
+  id            String    @id @default(uuid())
+  name          String?
+  email         String?   @unique
+  emailVerified DateTime?
+  image         String?   // Profile picture from Google/FB
+  
+  accounts      Account[]
+  sessions      Session[]
+  
+  // RELATIONSHIP TO YOUR APP
+  projects      Project[]
+  
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+// =========================================================
+// 2. PROJECT & CHAT WORKSPACE
+// =========================================================
+
+model Project {
+  id          String   @id @default(uuid())
+  name        String   
+  description String?
+  
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  sessions    ChatSession[]
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model ChatSession {
+  id        String   @id @default(uuid())
+  title     String   @default("New Chat") 
+  
+  projectId String
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  messages  ChatMessage[]
+  files     UIFile[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model ChatMessage {
+  id        String      @id @default(uuid())
+  
+  sessionId String
+  session   ChatSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  
+  role      Role        
+  content   String      @db.Text
+  imageUrl  String?     
+
+  createdAt DateTime    @default(now())
+}
+
+enum Role {
+  USER
+  ASSISTANT
+  SYSTEM
+}
+
+// =========================================================
+// 3. FILE SYSTEM (The "Scenarios")
+// =========================================================
+
+model UIFile {
+  id                String   @id @default(uuid())
+  
+  sessionId         String
+  session           ChatSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  name              String   
+
+  // STORES URL OF REFERENCE IMAGE
+  referenceImageUrl String?  
+
+  versions          CodeVersion[]
+  currentVersion    Int      @default(1) 
+  
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+}
+
+// =========================================================
+// 4. VERSION CONTROL (The Code History)
+// =========================================================
+
+model CodeVersion {
+  id            String   @id @default(uuid())
+  
+  fileId        String
+  file          UIFile   @relation(fields: [fileId], references: [id], onDelete: Cascade)
+
+  code          String   @db.Text
+  versionNumber Int      
+  description   String?  
+  
+  createdAt     DateTime @default(now())
+}
