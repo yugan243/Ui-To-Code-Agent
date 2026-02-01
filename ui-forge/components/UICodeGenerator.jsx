@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import ContextSwitchAlert from './ContextSwitchAlert';
 
 export default function UICodeGenerator() {
   const [leftSidebarOpen, setLeftSidebarOpen] = useState(true);
@@ -12,6 +13,7 @@ export default function UICodeGenerator() {
     { id: 1, role: 'assistant', content: 'Welcome! Upload a UI screenshot to generate code.' }
   ]);
   const [inputValue, setInputValue] = useState('');
+  const [contextSwitch, setContextSwitch] = useState(null);
 
   // Mock data structure
   const [projects] = useState([
@@ -157,7 +159,10 @@ export default function UICodeGenerator() {
                       <div className="ml-4 mt-2 space-y-1 animate-fade-in">
                         {project.components.map((component) => (
                           <div key={component.id} className="text-sm">
-                            <div className="px-3 py-2 text-white/60 hover:text-white/90 rounded-lg hover:bg-white/5 transition-colors cursor-pointer flex items-center gap-2">
+                            <div 
+                              onClick={() => setContextSwitch(component.name)}
+                              className="px-3 py-2 text-white/60 hover:text-white/90 rounded-lg hover:bg-white/5 transition-colors cursor-pointer flex items-center gap-2"
+                            >
                               <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
                               </svg>
@@ -479,6 +484,14 @@ export default function UICodeGenerator() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Context Switch Alert */}
+      {contextSwitch && (
+        <ContextSwitchAlert 
+          componentName={contextSwitch} 
+          onClose={() => setContextSwitch(null)} 
+        />
       )}
     </div>
   );
