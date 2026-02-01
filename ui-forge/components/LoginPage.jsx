@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import { login, googleSignIn } from '@/app/actions/auth-actions';
 
 export default function LoginPage({ onLoginSuccess }) {
   const router = useRouter();
@@ -11,6 +12,8 @@ export default function LoginPage({ onLoginSuccess }) {
   const [particles, setParticles] = useState([]);
   const [ripples, setRipples] = useState([]);
   const [activeFeature, setActiveFeature] = useState(0);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState('');
   const [formData, setFormData] = useState({
     email: '',
     password: '',
@@ -105,23 +108,45 @@ export default function LoginPage({ onLoginSuccess }) {
     }, 1000);
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    console.log('Login attempt:', formData);
-    
-    if (onLoginSuccess) {
-      onLoginSuccess();
-    } else {
-      alert('Login successful! Redirecting...');
-      setTimeout(() => {
-        router.push('/');
-      }, 1000);
+    setError('');
+    setIsLoading(true);
+
+    try {
+      const formDataObj = new FormData();
+      formDataObj.append('email', formData.email);
+      formDataObj.append('password', formData.password);
+
+      const result = await login(formDataObj);
+
+      if (result?.error) {
+        setError(result.error);
+        setIsLoading(false);
+      } else {
+        // Success - NextAuth will redirect automatically
+        if (onLoginSuccess) {
+          onLoginSuccess();
+        }
+      }
+    } catch (error) {
+      console.error('Login error:', error);
+      setError('Something went wrong. Please try again.');
+      setIsLoading(false);
     }
   };
 
-  const handleSocialLogin = (provider) => {
-    console.log(`${provider} login initiated`);
-    alert(`${provider.charAt(0).toUpperCase() + provider.slice(1)} login would be implemented here!`);
+  const handleSocialLogin = async (provider) => {
+    setIsLoading(true);
+    try {
+      if (provider === 'google') {
+        await googleSignIn();
+      }
+    } catch (error) {
+      console.error('Social login error:', error);
+      setError('Social login failed. Please try again.');
+      setIsLoading(false);
+    }
   };
 
   const togglePassword = () => {
@@ -307,6 +332,13 @@ export default function LoginPage({ onLoginSuccess }) {
               </p>
             </div>
 
+            {/* Error Message */}
+            {error && (
+              <div className="mb-6 p-4 bg-red-500/10 border border-red-500/30 rounded-xl text-red-400 text-sm text-center animate-fade-in">
+                {error}
+              </div>
+            )}
+
             {/* Form */}
             <form onSubmit={handleSubmit} className="space-y-6 relative z-10">
               {/* Email Input */}
@@ -381,15 +413,22 @@ export default function LoginPage({ onLoginSuccess }) {
               {/* Submit Button */}
               <button
                 type="submit"
-                className="w-full py-3.5 bg-linear-to-r from-indigo-500 to-indigo-600 hover:from-indigo-600 hover:to-indigo-700 rounded-xl font-syne font-semibold text-base transition-all duration-300 shadow-lg shadow-indigo-500/40 hover:shadow-indigo-500/60 hover:-translate-y-1 hover:scale-[1.02] active:translate-y-0 active:scale-100 relative overflow-hidden group/button"
+                disabled={isLoading}
+                className="w-full py-3.5 bg-linear-to-r from-indigo-500 to-indigo-600 hover:from-indigo-600 hover:to-indigo-700 rounded-xl font-syne font-semibold text-base transition-all duration-300 shadow-lg shadow-indigo-500/40 hover:shadow-indigo-500/60 hover:-translate-y-1 hover:scale-[1.02] active:translate-y-0 active:scale-100 relative overflow-hidden group/button disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:translate-y-0 disabled:hover:scale-100"
               >
-                <span className="relative z-10">Sign In</span>
-                <div className="absolute inset-0 bg-linear-to-r from-transparent via-white/30 to-transparent -translate-x-full group-hover/button:translate-x-full transition-transform duration-700" />
-                <div className="absolute inset-0 opacity-0 group-hover/button:opacity-100 transition-opacity">
-                  <div className="absolute top-2 left-4 w-1 h-1 bg-white rounded-full animate-ping" />
-                  <div className="absolute bottom-3 right-8 w-1 h-1 bg-white rounded-full animate-ping" style={{ animationDelay: '0.2s' }} />
-                  <div className="absolute top-4 right-12 w-1 h-1 bg-white rounded-full animate-ping" style={{ animationDelay: '0.4s' }} />
-                </div>
+                <span className="relative z-10">
+                  {isLoading ? 'Signing In...' : 'Sign In'}
+                </span>
+                {!isLoading && (
+                  <>
+                    <div className="absolute inset-0 bg-linear-to-r from-transparent via-white/30 to-transparent -translate-x-full group-hover/button:translate-x-full transition-transform duration-700" />
+                    <div className="absolute inset-0 opacity-0 group-hover/button:opacity-100 transition-opacity">
+                      <div className="absolute top-2 left-4 w-1 h-1 bg-white rounded-full animate-ping" />
+                      <div className="absolute bottom-3 right-8 w-1 h-1 bg-white rounded-full animate-ping" style={{ animationDelay: '0.2s' }} />
+                      <div className="absolute top-4 right-12 w-1 h-1 bg-white rounded-full animate-ping" style={{ animationDelay: '0.4s' }} />
+                    </div>
+                  </>
+                )}
               </button>
             </form>
 

@@ -1,9 +1,11 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { signOut } from 'next-auth/react';
 import ContextSwitchAlert from './ContextSwitchAlert';
 
 export default function UICodeGenerator() {
+  // ALL hooks must be called before any conditional returns
   const [leftSidebarOpen, setLeftSidebarOpen] = useState(true);
   const [rightSidebarOpen, setRightSidebarOpen] = useState(true);
   const [activeProject, setActiveProject] = useState('project-1');
@@ -14,8 +16,62 @@ export default function UICodeGenerator() {
   ]);
   const [inputValue, setInputValue] = useState('');
   const [contextSwitch, setContextSwitch] = useState(null);
+  
+  // Auto-logout after 5 minutes of inactivity
+  useEffect(() => {
+    const INACTIVITY_TIMEOUT = 5 * 60 * 1000; // 5 minutes in milliseconds
+    let inactivityTimer;
 
-  // Mock data structure
+    const resetTimer = () => {
+      // Clear existing timer
+      if (inactivityTimer) {
+        clearTimeout(inactivityTimer);
+      }
+
+      // Set new timer
+      inactivityTimer = setTimeout(async () => {
+        console.log('User inactive for 5 minutes, signing out...');
+        try {
+          await signOut({ callbackUrl: '/login', redirect: true });
+        } catch (error) {
+          window.location.href = '/api/auth/signout';
+        }
+      }, INACTIVITY_TIMEOUT);
+    };
+
+    // Events that indicate user activity
+    const activityEvents = ['mousedown', 'mousemove', 'keypress', 'scroll', 'touchstart', 'click'];
+
+    // Add event listeners
+    activityEvents.forEach(event => {
+      document.addEventListener(event, resetTimer);
+    });
+
+    // Initialize timer on mount
+    resetTimer();
+
+    // Cleanup on unmount
+    return () => {
+      if (inactivityTimer) {
+        clearTimeout(inactivityTimer);
+      }
+      activityEvents.forEach(event => {
+        document.removeEventListener(event, resetTimer);
+      });
+    };
+  }, []);
+  
+  const handleLogout = async () => {
+    try {
+      await signOut({ callbackUrl: '/login', redirect: true });
+    } catch (error) {
+      console.error('Logout error:', error);
+      // Force redirect even if there's an error
+      window.location.href = '/api/auth/signout';
+    }
+  };
+
+  // Mock data structure - moved here with other hooks
   const [projects] = useState([
     {
       id: 'project-1',
@@ -216,6 +272,15 @@ export default function UICodeGenerator() {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                 </svg>
                 Export
+              </button>
+              <button 
+                onClick={handleLogout}
+                className="px-4 py-2 bg-white/5 hover:bg-red-500/20 rounded-lg text-sm transition-all duration-300 border border-white/10 hover:border-red-500/30 flex items-center gap-2 group"
+              >
+                <svg className="w-4 h-4 group-hover:text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                </svg>
+                <span className="group-hover:text-red-400">Logout</span>
               </button>
             </div>
           </div>
@@ -489,6 +554,7 @@ export default function UICodeGenerator() {
       {/* Context Switch Alert */}
       {contextSwitch && (
         <ContextSwitchAlert 
+          key={contextSwitch}
           componentName={contextSwitch} 
           onClose={() => setContextSwitch(null)} 
         />
