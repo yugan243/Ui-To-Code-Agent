@@ -1,10 +1,35 @@
 'use client';
 
+import { createNewProject } from '@/app/actions/project-actions';
 import { useState, useEffect } from 'react';
 import { signOut } from 'next-auth/react';
 import ContextSwitchAlert from './ContextSwitchAlert';
 
-export default function UICodeGenerator() {
+// Helper: Transforms Database Structure -> UI Structure
+const transformToUI = (dbProjects) => {
+  if (!dbProjects) return [];
+  
+  return dbProjects.map(p => ({
+    id: p.id,
+    name: p.name,
+    createdAt: new Date(p.createdAt).toLocaleDateString(),
+    // This is the magic fix: We treat 'Files' as 'Components'
+    components: p.sessions.flatMap(session => 
+      session.files?.map(file => ({
+        id: file.id,
+        name: file.name,
+        versions: file.versions.map(v => ({
+          id: v.id,
+          name: `v${v.versionNumber}`, // e.g. "v1"
+          timestamp: new Date(v.createdAt).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}),
+          code: v.code
+        }))
+      })) || []
+    )
+  }));
+};
+
+export default function UICodeGenerator({ initialProjects = [], user }) {
   // ALL hooks must be called before any conditional returns
   const [leftSidebarOpen, setLeftSidebarOpen] = useState(true);
   const [rightSidebarOpen, setRightSidebarOpen] = useState(true);
@@ -16,6 +41,8 @@ export default function UICodeGenerator() {
   ]);
   const [inputValue, setInputValue] = useState('');
   const [contextSwitch, setContextSwitch] = useState(null);
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [newProjectName, setNewProjectName] = useState('');
   
   // Auto-logout after 5 minutes of inactivity
   useEffect(() => {
@@ -71,47 +98,73 @@ export default function UICodeGenerator() {
     }
   };
 
+  // Initialize with the real data passed from the server
+  const [projects, setProjects] = useState(transformToUI(initialProjects));
   // Mock data structure - moved here with other hooks
-  const [projects] = useState([
-    {
-      id: 'project-1',
-      name: 'E-commerce Dashboard',
-      createdAt: '2024-01-28',
-      components: [
-        {
-          id: 'comp-1',
-          name: 'Login Form',
-          versions: [
-            { id: 'v1', name: 'Initial Design', timestamp: '10:30 AM', code: '<div class="login">...</div>' },
-            { id: 'v2', name: 'With Glassmorphism', timestamp: '11:45 AM', code: '<div class="login glass">...</div>' },
-            { id: 'v3', name: 'Mobile Optimized', timestamp: '2:15 PM', code: '<div class="login responsive">...</div>' }
-          ]
-        },
-        {
-          id: 'comp-2',
-          name: 'Product Card',
-          versions: [
-            { id: 'v1', name: 'Basic Layout', timestamp: '3:20 PM', code: '<div class="product-card">...</div>' },
-            { id: 'v2', name: 'With Hover Effects', timestamp: '4:10 PM', code: '<div class="product-card animated">...</div>' }
-          ]
-        }
-      ]
-    },
-    {
-      id: 'project-2',
-      name: 'Portfolio Website',
-      createdAt: '2024-01-29',
-      components: [
-        {
-          id: 'comp-3',
-          name: 'Hero Section',
-          versions: [
-            { id: 'v1', name: 'Initial Version', timestamp: 'Yesterday', code: '<section class="hero">...</section>' }
-          ]
-        }
-      ]
+  // const [projects] = useState([
+  //   {
+  //     id: 'project-1',
+  //     name: 'E-commerce Dashboard',
+  //     createdAt: '2024-01-28',
+  //     components: [
+  //       {
+  //         id: 'comp-1',
+  //         name: 'Login Form',
+  //         versions: [
+  //           { id: 'v1', name: 'Initial Design', timestamp: '10:30 AM', code: '<div class="login">...</div>' },
+  //           { id: 'v2', name: 'With Glassmorphism', timestamp: '11:45 AM', code: '<div class="login glass">...</div>' },
+  //           { id: 'v3', name: 'Mobile Optimized', timestamp: '2:15 PM', code: '<div class="login responsive">...</div>' }
+  //         ]
+  //       },
+  //       {
+  //         id: 'comp-2',
+  //         name: 'Product Card',
+  //         versions: [
+  //           { id: 'v1', name: 'Basic Layout', timestamp: '3:20 PM', code: '<div class="product-card">...</div>' },
+  //           { id: 'v2', name: 'With Hover Effects', timestamp: '4:10 PM', code: '<div class="product-card animated">...</div>' }
+  //         ]
+  //       }
+  //     ]
+  //   },
+  //   {
+  //     id: 'project-2',
+  //     name: 'Portfolio Website',
+  //     createdAt: '2024-01-29',
+  //     components: [
+  //       {
+  //         id: 'comp-3',
+  //         name: 'Hero Section',
+  //         versions: [
+  //           { id: 'v1', name: 'Initial Version', timestamp: 'Yesterday', code: '<section class="hero">...</section>' }
+  //         ]
+  //       }
+  //     ]
+  //   }
+  // ]);
+
+// 1. Just open the modal
+  const openCreateModal = () => {
+    setNewProjectName(''); // Reset input
+    setShowCreateModal(true);
+  };
+
+  // 2. actually create it when they click "Create" in the modal
+  const confirmCreateProject = async (e) => {
+    e.preventDefault(); // Prevent form submit refresh
+    if (!newProjectName.trim()) return;
+
+    // Use the custom name
+    const result = await createNewProject(newProjectName);
+    
+    if (result.success) {
+      const newProjectFormatted = transformToUI([result.project])[0];
+      setProjects([newProjectFormatted, ...projects]);
+      setActiveProject(result.project.id);
+      setShowCreateModal(false); // Close modal
+    } else {
+      alert("Failed to create project");
     }
-  ]);
+  };
 
   const handleSendMessage = () => {
     if (!inputValue.trim()) return;
@@ -167,7 +220,8 @@ export default function UICodeGenerator() {
                 </div>
               </div>
               
-              <button className="w-full px-4 py-2.5 bg-linear-to-r from-indigo-500 to-indigo-600 hover:from-indigo-600 hover:to-indigo-700 rounded-xl font-semibold text-sm transition-all duration-300 hover:shadow-lg hover:shadow-indigo-500/50 hover:-translate-y-0.5 active:translate-y-0 flex items-center justify-center gap-2">
+              <button 
+                onClick={openCreateModal}  className="w-full px-4 py-2.5 bg-linear-to-r from-indigo-500 to-indigo-600 hover:from-indigo-600 hover:to-indigo-700 rounded-xl font-semibold text-sm transition-all duration-300 hover:shadow-lg hover:shadow-indigo-500/50 hover:-translate-y-0.5 active:translate-y-0 flex items-center justify-center gap-2">
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
                 </svg>
@@ -559,6 +613,58 @@ export default function UICodeGenerator() {
           onClose={() => setContextSwitch(null)} 
         />
       )}
+      {/* Create Project Modal */}
+      {showCreateModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-fade-in">
+          <div className="bg-[#1a1a2e] border border-white/10 rounded-2xl p-6 w-full max-w-md shadow-2xl animate-scale-in relative">
+            
+            {/* Close Button */}
+            <button 
+              onClick={() => setShowCreateModal(false)}
+              className="absolute top-4 right-4 text-white/40 hover:text-white transition-colors"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+
+            <h3 className="font-syne font-bold text-xl text-white mb-1">New Project</h3>
+            <p className="text-sm text-white/50 mb-6">Give your new idea a name</p>
+
+            <form onSubmit={confirmCreateProject}>
+              <div className="mb-6">
+                <label className="block text-xs font-medium text-white/60 mb-2 uppercase tracking-wider">Project Name</label>
+                <input
+                  type="text"
+                  autoFocus
+                  value={newProjectName}
+                  onChange={(e) => setNewProjectName(e.target.value)}
+                  placeholder="e.g., Crypto Dashboard"
+                  className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white placeholder:text-white/20 focus:outline-none focus:border-indigo-500/50 focus:bg-white/10 transition-all"
+                />
+              </div>
+
+              <div className="flex gap-3">
+                <button
+                  type="button"
+                  onClick={() => setShowCreateModal(false)}
+                  className="flex-1 px-4 py-2.5 bg-white/5 hover:bg-white/10 text-white/70 hover:text-white rounded-xl font-medium transition-all"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={!newProjectName.trim()}
+                  className="flex-1 px-4 py-2.5 bg-linear-to-r from-indigo-500 to-indigo-600 hover:from-indigo-600 hover:to-indigo-700 text-white rounded-xl font-medium transition-all shadow-lg shadow-indigo-500/20 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Create Project
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
+    
   );
 }
