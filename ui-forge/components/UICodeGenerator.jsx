@@ -1,9 +1,11 @@
 'use client';
 
-import { createNewProject } from '@/app/actions/project-actions';
+import { createNewProject, getProjectChatHistory, saveUserMessage } from '@/app/actions/project-actions';
 import { useState, useEffect } from 'react';
 import { signOut } from 'next-auth/react';
 import ContextSwitchAlert from './ContextSwitchAlert';
+import { generateComponent } from '@/app/actions/generate';
+import SandpackPreview from './SandpackPreview';
 
 // Helper: Transforms Database Structure -> UI Structure
 const transformToUI = (dbProjects) => {
@@ -33,7 +35,7 @@ export default function UICodeGenerator({ initialProjects = [], user }) {
   // ALL hooks must be called before any conditional returns
   const [leftSidebarOpen, setLeftSidebarOpen] = useState(true);
   const [rightSidebarOpen, setRightSidebarOpen] = useState(true);
-  const [activeProject, setActiveProject] = useState('project-1');
+  const [activeProject, setActiveProject] = useState(initialProjects.length > 0 ? initialProjects[0].id : null);
   const [activeVersion, setActiveVersion] = useState(null);
   const [viewMode, setViewMode] = useState('split'); // 'code', 'preview', 'split'
   const [messages, setMessages] = useState([
@@ -43,6 +45,7 @@ export default function UICodeGenerator({ initialProjects = [], user }) {
   const [contextSwitch, setContextSwitch] = useState(null);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [newProjectName, setNewProjectName] = useState('');
+  const [isCopied, setIsCopied] = useState(false);
   
   // Auto-logout after 5 minutes of inactivity
   useEffect(() => {
@@ -87,6 +90,30 @@ export default function UICodeGenerator({ initialProjects = [], user }) {
       });
     };
   }, []);
+
+  // Load chat history when switching projects
+  useEffect(() => {
+    async function loadChat() {
+      if (!activeProject) return;
+      
+      try {
+        const history = await getProjectChatHistory(activeProject);
+        
+        if (history && history.length > 0) {
+          setMessages(history);
+        } else {
+          // If no history, show default welcome message
+          setMessages([
+            { id: 'welcome', role: 'assistant', content: 'Welcome! Upload a UI screenshot to generate code.' }
+          ]);
+        }
+      } catch (err) {
+        console.error("Failed to load chat:", err);
+      }
+    }
+
+    loadChat();
+  }, [activeProject]); // <--- Runs every time you click a different project
   
   const handleLogout = async () => {
     try {
@@ -166,25 +193,100 @@ export default function UICodeGenerator({ initialProjects = [], user }) {
     }
   };
 
-  const handleSendMessage = () => {
+  const handleSendMessage = async () => {
     if (!inputValue.trim()) return;
     
-    setMessages([...messages, { 
-      id: messages.length + 1, 
-      role: 'user', 
-      content: inputValue 
-    }]);
-    
-    // Simulate AI response
-    setTimeout(() => {
-      setMessages(prev => [...prev, {
-        id: prev.length + 1,
-        role: 'assistant',
-        content: 'I\'ve generated the code for your UI. Check the right sidebar for the new version!'
+    const userText = inputValue;
+    setInputValue(''); 
+
+    // Optimistic UI: Add User Message
+    const tempUserId = Date.now();
+    setMessages(prev => [...prev, { id: tempUserId, role: 'user', content: userText }]);
+
+    try {
+      // 1. Save User Message
+      await saveUserMessage(activeProject, userText, 'USER');
+
+      // 2. Add "Thinking" Message
+      const tempAiId = Date.now() + 1;
+      setMessages(prev => [...prev, { 
+        id: tempAiId, 
+        role: 'assistant', 
+        content: 'Generating your UI... (This may take up to 30s)' 
       }]);
-    }, 1000);
+
+      // 3. Get Context & Call AI
+      const currentCode = activeVersionData?.code || "";
+      const result = await generateComponent(activeProject, userText, undefined, currentCode);
+
+      if (result.success) {
+        // A. Update Chat Message to Success
+        setMessages(prev => prev.map(msg => 
+          msg.id === tempAiId 
+            ? { ...msg, content: "I've generated the code. Check the preview!" } 
+            : msg
+        ));
+
+        // B. Update Projects State (The "Sidebar Fix")
+        setProjects(prevProjects => prevProjects.map(proj => {
+          if (proj.id !== activeProject) return proj;
+
+          const updatedProj = { ...proj };
+          
+          // Ensure structure exists
+          if (!updatedProj.components || updatedProj.components.length === 0) {
+            updatedProj.components = [{
+              id: 'temp-comp-' + Date.now(), 
+              name: 'Component.tsx',
+              versions: []
+            }];
+          }
+
+          // Create New Version Object
+          const currentVersions = updatedProj.components[0].versions;
+          const newVersionObj = {
+            id: result.versionId, // From Server
+            name: `v${currentVersions.length + 1}`,
+            timestamp: new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}),
+            code: result.code
+          };
+
+          // Add to top of list
+          updatedProj.components[0].versions.unshift(newVersionObj);
+          
+          return updatedProj;
+        }));
+
+        // C. Select the New Version & Open Preview
+        setActiveVersion(result.versionId);
+        setViewMode('preview'); // Auto-switch to preview mode
+        setRightSidebarOpen(true); 
+
+      } else {
+        // Handle Error
+        setMessages(prev => prev.map(msg => 
+          msg.id === tempAiId 
+            ? { ...msg, content: `Error: ${result.error || "Generation Failed"}` } 
+            : msg
+        ));
+      }
+
+    } catch (err) {
+      console.error("Critical Error:", err);
+      alert("Something broke: " + err.message);
+    }
+  };
+
+  const handleCopyCode = async () => {
+    if (!activeVersionData?.code) return;
     
-    setInputValue('');
+    try {
+      await navigator.clipboard.writeText(activeVersionData.code);
+      setIsCopied(true);
+      setTimeout(() => setIsCopied(false), 2000); // Reset after 2 seconds
+    } catch (err) {
+      console.error("Failed to copy:", err);
+    }
   };
 
   const currentProject = projects.find(p => p.id === activeProject);
@@ -540,11 +642,29 @@ export default function UICodeGenerator({ initialProjects = [], user }) {
               </div>
               
               <div className="flex items-center gap-2">
-                <button className="px-4 py-2 bg-white/5 hover:bg-white/10 rounded-lg text-sm transition-all duration-300 border border-white/10 hover:border-white/20 flex items-center gap-2">
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                  </svg>
-                  Copy Code
+                <button 
+                  onClick={handleCopyCode}
+                  className={`px-4 py-2 rounded-lg text-sm transition-all duration-300 border flex items-center gap-2 ${
+                    isCopied 
+                      ? 'bg-green-500/20 text-green-400 border-green-500/30' 
+                      : 'bg-white/5 hover:bg-white/10 text-white border-white/10 hover:border-white/20'
+                  }`}
+                >
+                  {isCopied ? (
+                    <>
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                      </svg>
+                      Copied!
+                    </>
+                  ) : (
+                    <>
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                      </svg>
+                      Copy Code
+                    </>
+                  )}
                 </button>
                 <button 
                   onClick={() => setActiveVersion(null)}
@@ -578,28 +698,14 @@ export default function UICodeGenerator({ initialProjects = [], user }) {
                 </div>
               )}
 
-              {/* Preview Panel */}
-              {(viewMode === 'preview' || viewMode === 'split') && (
-                <div className={`${viewMode === 'split' ? 'w-1/2' : 'w-full'} flex flex-col bg-white`}>
-                  <div className="h-12 bg-gray-100 border-b border-gray-200 flex items-center justify-center gap-2 px-4">
-                    <div className="flex-1 flex items-center gap-2 max-w-2xl bg-white border border-gray-300 rounded-lg px-3 py-1.5">
-                      <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-                      </svg>
-                      <span className="text-xs text-gray-500 font-mono">localhost:3000</span>
+              {/* Preview Panel - THE NEW ENGINE */}
+                {(viewMode === 'preview' || viewMode === 'split') && (
+                  <div className={`${viewMode === 'split' ? 'w-1/2' : 'w-full'} flex flex-col bg-white overflow-hidden h-full relative`}>
+                    <div className="flex-1 h-full w-full absolute inset-0">
+                      <SandpackPreview code={activeVersionData?.code} />
                     </div>
                   </div>
-                  <div className="flex-1 overflow-auto flex items-center justify-center p-8 bg-linear-to-br from-gray-50 to-gray-100">
-                    <div className="bg-white rounded-2xl shadow-2xl p-8 max-w-md w-full">
-                      <div className="text-center text-gray-600">
-                        <div className="w-16 h-16 bg-linear-to-br from-indigo-500 to-pink-500 rounded-2xl mx-auto mb-4" />
-                        <p className="font-semibold mb-2">Preview Mode</p>
-                        <p className="text-sm text-gray-500">Your generated UI will appear here</p>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
+                )}
             </div>
           </div>
         </div>
