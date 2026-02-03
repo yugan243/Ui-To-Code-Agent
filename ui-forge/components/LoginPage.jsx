@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { login, googleSignIn } from '@/app/actions/auth-actions';
+import { login, googleSignIn, githubSignIn } from '@/app/actions/auth-actions';
 
 export default function LoginPage({ onLoginSuccess }) {
   const router = useRouter();
@@ -146,8 +146,15 @@ export default function LoginPage({ onLoginSuccess }) {
     try {
       if (provider === 'google') {
         await googleSignIn();
+      } else if (provider === 'github') {
+        await githubSignIn();
       }
     } catch (error) {
+      // NEXT_REDIRECT is thrown on successful OAuth - this is expected
+      // Don't show error, the redirect is happening
+      if (error?.digest?.includes('NEXT_REDIRECT')) {
+        return; // Let the redirect happen silently
+      }
       console.error('Social login error:', error);
       setError('Social login failed. Please try again.');
       setIsLoading(false);

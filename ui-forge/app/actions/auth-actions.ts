@@ -127,6 +127,13 @@ export async function googleSignIn() {
 }
 
 /**
+ * GitHub Sign In
+ */
+export async function githubSignIn() {
+  await signIn('github', { redirectTo: '/' });
+}
+
+/**
  * Logout
  */
 export async function logout() {
