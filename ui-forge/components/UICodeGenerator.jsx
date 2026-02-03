@@ -53,6 +53,7 @@ export default function UICodeGenerator({ initialProjects = [], user }) {
   const [activeFileId, setActiveFileId] = useState(null);
   const [collapsedProjects, setCollapsedProjects] = useState(new Set()); // Track collapsed projects
   const [collapsedFiles, setCollapsedFiles] = useState(new Set()); // Track collapsed file groups
+  const [showProfileMenu, setShowProfileMenu] = useState(false); // Track profile menu visibility
   
   // Auto-logout after 5 minutes of inactivity
   useEffect(() => {
@@ -572,6 +573,88 @@ export default function UICodeGenerator({ initialProjects = [], user }) {
                 ))}
               </div>
             </div>
+
+            {/* User Profile Section - Bottom */}
+            <div className="p-3 border-t border-white/10 relative">
+              <button
+                onClick={() => setShowProfileMenu(!showProfileMenu)}
+                className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-white/5 transition-all duration-300 group"
+              >
+                <div className="w-10 h-10 rounded-full overflow-hidden bg-white/10 border border-white/20 shrink-0">
+                  {user?.image ? (
+                    <img src={user.image} alt={user.name || 'User'} className="w-full h-full object-cover" />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center bg-linear-to-br from-indigo-500 to-pink-500 text-white font-semibold">
+                      {user?.name?.[0]?.toUpperCase() || 'U'}
+                    </div>
+                  )}
+                </div>
+                <div className="flex-1 text-left min-w-0">
+                  <div className="font-semibold text-sm truncate">{user?.name || 'User'}</div>
+                  <div className="text-xs text-white/40">Free</div>
+                </div>
+                <svg 
+                  className={`w-4 h-4 text-white/40 transition-transform duration-200 ${
+                    showProfileMenu ? 'rotate-180' : ''
+                  }`} 
+                  fill="none" 
+                  stroke="currentColor" 
+                  viewBox="0 0 24 24"
+                >
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+              </button>
+
+              {/* Profile Dropdown Menu */}
+              {showProfileMenu && (
+                <div className="absolute bottom-full left-3 right-3 mb-2 bg-[#1a1a2e] border border-white/10 rounded-2xl shadow-2xl overflow-hidden animate-scale-in z-50">
+                  {/* User Info Header */}
+                  <div className="p-4 border-b border-white/10 bg-white/5">
+                    <div className="flex items-center gap-3">
+                      <div className="w-12 h-12 rounded-full overflow-hidden bg-white/10 border border-white/20">
+                        {user?.image ? (
+                          <img src={user.image} alt={user.name || 'User'} className="w-full h-full object-cover" />
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center bg-linear-to-br from-indigo-500 to-pink-500 text-white font-bold text-lg">
+                            {user?.name?.[0]?.toUpperCase() || 'U'}
+                          </div>
+                        )}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="font-semibold text-sm truncate">{user?.name || 'User'}</div>
+                        <div className="text-xs text-white/50 truncate">{user?.email || 'No email'}</div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Menu Items */}
+                  <div className="p-2">
+                    <button className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-white/5 transition-colors text-left group">
+                      <svg className="w-5 h-5 text-white/60 group-hover:text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                      </svg>
+                      <span className="text-sm text-white/80 group-hover:text-white">Personalization</span>
+                    </button>
+                    <button className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-white/5 transition-colors text-left group">
+                      <svg className="w-5 h-5 text-white/60 group-hover:text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                      <span className="text-sm text-white/80 group-hover:text-white">Help</span>
+                    </button>
+                    <div className="h-px bg-white/10 my-2" />
+                    <button 
+                      onClick={handleLogout}
+                      className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-red-500/10 transition-colors text-left group"
+                    >
+                      <svg className="w-5 h-5 text-white/60 group-hover:text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                      </svg>
+                      <span className="text-sm text-white/80 group-hover:text-red-400">Log out</span>
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
 
           {/* Toggle Button */}
@@ -606,15 +689,7 @@ export default function UICodeGenerator({ initialProjects = [], user }) {
             </div>
 
             <div className="flex items-center gap-2">
-              <button 
-                onClick={handleLogout}
-                className="px-4 py-2 bg-white/5 hover:bg-red-500/20 rounded-lg text-sm transition-all duration-300 border border-white/10 hover:border-red-500/30 flex items-center gap-2 group"
-              >
-                <svg className="w-4 h-4 group-hover:text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
-                </svg>
-                <span className="group-hover:text-red-400">Logout</span>
-              </button>
+              {/* Logout button removed - now in profile menu */}
             </div>
           </div>
 
