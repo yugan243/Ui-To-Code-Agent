@@ -49,6 +49,7 @@ export default function UICodeGenerator({ initialProjects = [], user }) {
   const [isCopied, setIsCopied] = useState(false);
   const [selectedImage, setSelectedImage] = useState(null); // Stores base64 string
   const fileInputRef = useRef(null); // Reference to hidden file input
+  const messagesEndRef = useRef(null); // Reference for auto-scroll
   const [activeFileId, setActiveFileId] = useState(null);
   const [collapsedProjects, setCollapsedProjects] = useState(new Set()); // Track collapsed projects
   const [collapsedFiles, setCollapsedFiles] = useState(new Set()); // Track collapsed file groups
@@ -120,6 +121,11 @@ export default function UICodeGenerator({ initialProjects = [], user }) {
 
     loadChat();
   }, [activeProject]); // <--- Runs every time you click a different project
+  
+  // Auto-scroll to bottom when messages change
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages]);
   
   const handleLogout = async () => {
     try {
@@ -416,7 +422,34 @@ export default function UICodeGenerator({ initialProjects = [], user }) {
       console.error("Failed to copy:", err);
     }
   };
+  const handleExportZip = async () => {
+    if (!activeVersionData?.code) return;
 
+    try {
+      // Dynamically import JSZip
+      const JSZip = (await import('jszip')).default;
+      const zip = new JSZip();
+      
+      // Add the HTML file to the zip
+      zip.file('index.html', activeVersionData.code);
+      
+      // Generate the zip file
+      const blob = await zip.generateAsync({ type: 'blob' });
+      
+      // Create download link
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `${activeVersionData.name || 'code'}.zip`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error('Failed to export:', err);
+      alert('Failed to export. Please try again.');
+    }
+  };
   const currentProject = projects.find(p => p.id === activeProject);
   const activeVersionData = activeVersion ? 
     currentProject?.components.flatMap(c => c.versions).find(v => v.id === activeVersion) : null;
@@ -573,12 +606,6 @@ export default function UICodeGenerator({ initialProjects = [], user }) {
             </div>
 
             <div className="flex items-center gap-2">
-              <button className="px-4 py-2 bg-white/5 hover:bg-white/10 rounded-lg text-sm transition-all duration-300 border border-white/10 hover:border-white/20 flex items-center gap-2">
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                </svg>
-                Export
-              </button>
               <button 
                 onClick={handleLogout}
                 className="px-4 py-2 bg-white/5 hover:bg-red-500/20 rounded-lg text-sm transition-all duration-300 border border-white/10 hover:border-red-500/30 flex items-center gap-2 group"
@@ -623,6 +650,8 @@ export default function UICodeGenerator({ initialProjects = [], user }) {
                 </div>
               </div>
             ))}
+            {/* Invisible scroll target */}
+            <div ref={messagesEndRef} />
           </div>
 
           {/* Input Area */}
@@ -845,6 +874,15 @@ export default function UICodeGenerator({ initialProjects = [], user }) {
               </div>
               
               <div className="flex items-center gap-2">
+                <button 
+                  onClick={handleExportZip}
+                  className="px-4 py-2 rounded-lg text-sm transition-all duration-300 border flex items-center gap-2 bg-white/5 hover:bg-white/10 text-white border-white/10 hover:border-white/20"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                  </svg>
+                  Export
+                </button>
                 <button 
                   onClick={handleCopyCode}
                   className={`px-4 py-2 rounded-lg text-sm transition-all duration-300 border flex items-center gap-2 ${
