@@ -1,7 +1,8 @@
 'use client';
 
-import { createNewProject, getProjectChatHistory, saveUserMessage } from '@/app/actions/project-actions';
-import { useState, useEffect } from 'react';
+import { createNewProject, getProjectChatHistory, saveUserMessage, createUIFile } from '@/app/actions/project-actions'; 
+import { uploadImage } from '@/app/actions/upload';
+import { useState, useEffect, useRef } from 'react';
 import { signOut } from 'next-auth/react';
 import ContextSwitchAlert from './ContextSwitchAlert';
 import { generateComponent } from '@/app/actions/generate';
@@ -46,6 +47,11 @@ export default function UICodeGenerator({ initialProjects = [], user }) {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [newProjectName, setNewProjectName] = useState('');
   const [isCopied, setIsCopied] = useState(false);
+  const [selectedImage, setSelectedImage] = useState(null); // Stores base64 string
+  const fileInputRef = useRef(null); // Reference to hidden file input
+  const [activeFileId, setActiveFileId] = useState(null);
+  const [collapsedProjects, setCollapsedProjects] = useState(new Set()); // Track collapsed projects
+  const [collapsedFiles, setCollapsedFiles] = useState(new Set()); // Track collapsed file groups
   
   // Auto-logout after 5 minutes of inactivity
   useEffect(() => {
@@ -193,87 +199,209 @@ export default function UICodeGenerator({ initialProjects = [], user }) {
     }
   };
 
-  const handleSendMessage = async () => {
-    if (!inputValue.trim()) return;
-    
-    const userText = inputValue;
-    setInputValue(''); 
+  // --- IMAGE HANDLERS (Paste & Select) ---
 
-    // Optimistic UI: Add User Message
+  // 1. Handle File Selection (Button)
+  const handleFileSelect = (e) => {
+    const file = e.target.files[0];
+    if (file) processFile(file);
+  };
+
+  // 2. Handle Paste (Ctrl+V)
+  const handlePaste = (e) => {
+    const items = e.clipboardData.items;
+    for (let item of items) {
+      if (item.type.indexOf("image") !== -1) {
+        e.preventDefault();
+        const file = item.getAsFile();
+        processFile(file);
+      }
+    }
+  };
+
+  // 3. Process File -> Base64
+  const processFile = (file) => {
+    if (!file.type.startsWith('image/')) {
+      alert('Please upload an image file');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      setSelectedImage(reader.result); // Save Base64 for the API
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const getActiveContextImage = async (url) => {
+    try {
+      const response = await fetch(url, { cache: 'force-cache' }); 
+      const blob = await response.blob();
+      return new Promise((resolve) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(reader.result);
+        reader.readAsDataURL(blob);
+      });
+    } catch (e) {
+      console.warn("Browser cache fetch failed:", e);
+      return null;
+    }
+  };
+
+  // Helper: Context Switch Handler
+  const handleSwitchContext = (fileId, fileName) => {
+    setActiveFileId(fileId);
+    setContextSwitch(fileName); // Triggers your existing Alert
+  };
+
+  // Toggle project collapse
+  const toggleProjectCollapse = (projectId, e) => {
+    e.stopPropagation();
+    setCollapsedProjects(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(projectId)) {
+        newSet.delete(projectId);
+      } else {
+        newSet.add(projectId);
+      }
+      return newSet;
+    });
+  };
+
+  // Toggle file group collapse
+  const toggleFileCollapse = (fileId, e) => {
+    e.stopPropagation();
+    setCollapsedFiles(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(fileId)) {
+        newSet.delete(fileId);
+      } else {
+        newSet.add(fileId);
+      }
+      return newSet;
+    });
+  };
+
+  const handleSendMessage = async () => {
+    if (!inputValue.trim() && !selectedImage) return;
+    
+    let userText = inputValue;
+    let imagePayload = selectedImage; 
+    let currentFileId = activeFileId;
+
+    setInputValue(''); 
+    setSelectedImage(null); 
+
+    // Optimistic UI
     const tempUserId = Date.now();
-    setMessages(prev => [...prev, { id: tempUserId, role: 'user', content: userText }]);
+    setMessages(prev => [...prev, { 
+      id: tempUserId, 
+      role: 'user', 
+      content: userText,
+      image: imagePayload 
+    }]);
 
     try {
-      // 1. Save User Message
-      await saveUserMessage(activeProject, userText, 'USER');
+      // --- PATH A: NEW UPLOAD (Create "Screen X") ---
+      if (imagePayload) {
+        const uploadRes = await uploadImage(imagePayload);
+        
+        if (uploadRes.success) {
+           const fileRes = await createUIFile(activeProject, uploadRes.url);
+           
+           if (fileRes.success) {
+             currentFileId = fileRes.file.id;
+             setActiveFileId(currentFileId); 
+             
+             // Update Local State (Add new file to sidebar)
+             setProjects(prev => prev.map(p => {
+                if (p.id !== activeProject) return p;
+                const newComp = {
+                    id: fileRes.file.id,
+                    name: fileRes.file.name,
+                    referenceImageUrl: uploadRes.url,
+                    versions: []
+                };
+                // Avoid duplicates
+                const exists = p.components.find(c => c.id === newComp.id);
+                if (!exists) p.components.push(newComp);
+                return { ...p };
+             }));
+           }
+        }
+      } 
+      // --- PATH B: CONTEXT RE-USE (Talking about "Screen 1") ---
+      else if (activeFileId) {
+         const currentProject = projects.find(p => p.id === activeProject);
+         const activeFile = currentProject?.components.find(c => c.id === activeFileId);
 
-      // 2. Add "Thinking" Message
+         if (activeFile?.referenceImageUrl) {
+            // Fetch cached image as Base64 so AI can see it
+            const cachedBase64 = await getActiveContextImage(activeFile.referenceImageUrl);
+            if (cachedBase64) {
+                imagePayload = cachedBase64; 
+            }
+         }
+      }
+
+      // Save Message to DB (Pass URL if new upload, otherwise null)
+      // Note: We use 'selectedImage' check to ensure we only save URL if it's a FRESH upload
+      await saveUserMessage(activeProject, userText, 'USER', selectedImage ? activeProject?.components?.find(c => c.id === currentFileId)?.referenceImageUrl : null); 
+
       const tempAiId = Date.now() + 1;
       setMessages(prev => [...prev, { 
         id: tempAiId, 
         role: 'assistant', 
-        content: 'Generating your UI... (This may take up to 30s)' 
+        content: 'Analyzing context & generating...' 
       }]);
 
-      // 3. Get Context & Call AI
       const currentCode = activeVersionData?.code || "";
-      const result = await generateComponent(activeProject, userText, undefined, currentCode);
+      
+      // Call AI with the Image Payload (New or Cached)
+      // Pass currentFileId so version is saved to the correct file
+      const result = await generateComponent(activeProject, userText, imagePayload, currentCode, currentFileId);
 
       if (result.success) {
-        // A. Update Chat Message to Success
         setMessages(prev => prev.map(msg => 
           msg.id === tempAiId 
-            ? { ...msg, content: "I've generated the code. Check the preview!" } 
+            ? { ...msg, content: "Generated! Check the preview." } 
             : msg
         ));
 
-        // B. Update Projects State (The "Sidebar Fix")
+        // Update Versions List
         setProjects(prevProjects => prevProjects.map(proj => {
           if (proj.id !== activeProject) return proj;
-
+          
           const updatedProj = { ...proj };
+          const compIndex = updatedProj.components.findIndex(c => c.id === currentFileId);
           
-          // Ensure structure exists
-          if (!updatedProj.components || updatedProj.components.length === 0) {
-            updatedProj.components = [{
-              id: 'temp-comp-' + Date.now(), 
-              name: 'Component.tsx',
-              versions: []
-            }];
+          if (compIndex > -1) {
+             const newVersion = {
+                id: result.versionId,
+                name: `v${updatedProj.components[compIndex].versions.length + 1}`,
+                timestamp: new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}),
+                code: result.code
+             };
+             updatedProj.components[compIndex].versions.unshift(newVersion);
           }
-
-          // Create New Version Object
-          const currentVersions = updatedProj.components[0].versions;
-          const newVersionObj = {
-            id: result.versionId, // From Server
-            name: `v${currentVersions.length + 1}`,
-            timestamp: new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}),
-            code: result.code
-          };
-
-          // Add to top of list
-          updatedProj.components[0].versions.unshift(newVersionObj);
-          
           return updatedProj;
         }));
 
-        // C. Select the New Version & Open Preview
         setActiveVersion(result.versionId);
-        setViewMode('preview'); // Auto-switch to preview mode
+        setViewMode('preview');
         setRightSidebarOpen(true); 
 
       } else {
-        // Handle Error
         setMessages(prev => prev.map(msg => 
           msg.id === tempAiId 
-            ? { ...msg, content: `Error: ${result.error || "Generation Failed"}` } 
+            ? { ...msg, content: `Error: ${result.error}` } 
             : msg
         ));
       }
 
     } catch (err) {
-      console.error("Critical Error:", err);
-      alert("Something broke: " + err.message);
+      console.error(err);
+      alert("Error: " + err.message);
     }
   };
 
@@ -349,8 +477,25 @@ export default function UICodeGenerator({ initialProjects = [], user }) {
                       }`}
                     >
                       <div className="flex items-start justify-between mb-2">
-                        <h3 className="font-semibold text-sm line-clamp-1">{project.name}</h3>
-                        <span className={`text-xs px-2 py-0.5 rounded-full ${
+                        <div className="flex items-center gap-2 flex-1 min-w-0">
+                          <button
+                            onClick={(e) => toggleProjectCollapse(project.id, e)}
+                            className="p-0.5 hover:bg-white/10 rounded transition-colors shrink-0"
+                          >
+                            <svg 
+                              className={`w-3.5 h-3.5 transition-transform duration-200 ${
+                                collapsedProjects.has(project.id) ? '-rotate-90' : ''
+                              }`} 
+                              fill="none" 
+                              stroke="currentColor" 
+                              viewBox="0 0 24 24"
+                            >
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                            </svg>
+                          </button>
+                          <h3 className="font-semibold text-sm line-clamp-1">{project.name}</h3>
+                        </div>
+                        <span className={`text-xs px-2 py-0.5 rounded-full shrink-0 ${
                           activeProject === project.id 
                             ? 'bg-indigo-500/20 text-indigo-300' 
                             : 'bg-white/10 text-white/50'
@@ -366,24 +511,29 @@ export default function UICodeGenerator({ initialProjects = [], user }) {
                       </div>
                     </button>
 
-                    {/* Component List - shown when project is active */}
-                    {activeProject === project.id && (
-                      <div className="ml-4 mt-2 space-y-1 animate-fade-in">
-                        {project.components.map((component) => (
-                          <div key={component.id} className="text-sm">
-                            <div 
-                              onClick={() => setContextSwitch(component.name)}
-                              className="px-3 py-2 text-white/60 hover:text-white/90 rounded-lg hover:bg-white/5 transition-colors cursor-pointer flex items-center gap-2"
-                            >
-                              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
-                              </svg>
-                              {component.name}
-                              <span className="ml-auto text-xs text-white/30">{component.versions.length}</span>
-                            </div>
+                    {/* Component List - shown when not collapsed */}
+                    {!collapsedProjects.has(project.id) && (
+                    <div className="ml-4 mt-2 space-y-1 animate-fade-in">
+                      {project.components.map((component) => (
+                        <div key={component.id} className="text-sm">
+                          <div 
+                            onClick={() => handleSwitchContext(component.id, component.name)} 
+                            className={`
+                              px-3 py-2 rounded-lg cursor-pointer flex items-center gap-2 transition-all duration-200
+                              ${activeFileId === component.id 
+                                ? 'bg-indigo-500/20 text-white border border-indigo-500/30' // ACTIVE STYLE (Blueish)
+                                : 'text-white/60 hover:bg-white/5 hover:text-white'}          // INACTIVE STYLE
+                            `}
+                          >
+                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                            </svg>
+                            {component.name}
+                            <span className="ml-auto text-xs text-white/30">{component.versions.length}</span>
                           </div>
-                        ))}
-                      </div>
+                        </div>
+                      ))}
+                    </div>
                     )}
                   </div>
                 ))}
@@ -477,35 +627,71 @@ export default function UICodeGenerator({ initialProjects = [], user }) {
 
           {/* Input Area */}
           <div className="p-4 bg-white/5 backdrop-blur-xl border-t border-white/10">
-            <div className="max-w-4xl mx-auto">
+            <div className="max-w-4xl mx-auto relative">
+              
+              {/* --- IMAGE PREVIEW (Before Sending) --- */}
+              {selectedImage && (
+                <div className="absolute -top-24 left-0 bg-[#1a1a2e] border border-white/10 p-2 rounded-xl flex items-center gap-3 shadow-xl animate-fade-in-up">
+                  <div className="h-16 w-16 rounded-lg overflow-hidden relative border border-white/10">
+                    <img src={selectedImage} alt="Preview" className="w-full h-full object-cover" />
+                  </div>
+                  <div className="flex flex-col">
+                    <span className="text-xs text-white/70 font-medium">Image attached</span>
+                    <button 
+                      onClick={() => setSelectedImage(null)}
+                      className="text-xs text-red-400 hover:text-red-300 transition-colors text-left"
+                    >
+                      Remove
+                    </button>
+                  </div>
+                </div>
+              )}
+
               <div className="relative">
+                {/* Hidden File Input */}
+                <input 
+                  type="file" 
+                  ref={fileInputRef}
+                  onChange={handleFileSelect}
+                  accept="image/*"
+                  className="hidden"
+                />
+
                 <textarea
                   value={inputValue}
                   onChange={(e) => setInputValue(e.target.value)}
+                  onPaste={handlePaste} // <--- Add Paste Handler
                   onKeyDown={(e) => {
                     if (e.key === 'Enter' && !e.shiftKey) {
                       e.preventDefault();
                       handleSendMessage();
                     }
                   }}
-                  placeholder="Describe your UI or upload a screenshot..."
+                  placeholder="Describe your UI or paste a screenshot..." // Update placeholder
                   className="w-full bg-white/5 border border-white/10 rounded-2xl px-5 py-4 pr-32 text-sm resize-none focus:outline-none focus:border-indigo-500/50 focus:bg-white/8 transition-all duration-300 scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent placeholder:text-white/30"
                   rows={3}
                 />
                 <div className="absolute right-3 bottom-3 flex items-center gap-2">
-                  <button className="p-2 hover:bg-white/10 rounded-lg transition-colors">
-                    <svg className="w-5 h-5 text-white/50 hover:text-white/90" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  {/* Paperclip Icon (Unused for now) */}
+                  <button className="p-2 hover:bg-white/10 rounded-lg transition-colors text-white/50 cursor-not-allowed">
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
                     </svg>
                   </button>
-                  <button className="p-2 hover:bg-white/10 rounded-lg transition-colors">
-                    <svg className="w-5 h-5 text-white/50 hover:text-white/90" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  
+                  {/* Image Icon - Triggers File Input */}
+                  <button 
+                    onClick={() => fileInputRef.current?.click()}
+                    className="p-2 hover:bg-white/10 rounded-lg transition-colors text-white/50 hover:text-white/90"
+                  >
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
                     </svg>
                   </button>
+                  
                   <button 
                     onClick={handleSendMessage}
-                    disabled={!inputValue.trim()}
+                    disabled={!inputValue.trim() && !selectedImage} // Enable if text OR image
                     className="px-4 py-2 bg-linear-to-r from-indigo-500 to-indigo-600 hover:from-indigo-600 hover:to-indigo-700 rounded-xl font-semibold text-sm transition-all duration-300 hover:shadow-lg hover:shadow-indigo-500/50 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:shadow-none flex items-center gap-2"
                   >
                     <span>Send</span>
@@ -533,14 +719,30 @@ export default function UICodeGenerator({ initialProjects = [], user }) {
               <div className="p-3 space-y-4">
                 {currentProject?.components.map((component, compIdx) => (
                   <div key={component.id} className="animate-slide-in-right" style={{ animationDelay: `${compIdx * 50}ms` }}>
-                    <div className="flex items-center gap-2 mb-2 px-2">
+                    <button 
+                      onClick={(e) => toggleFileCollapse(component.id, e)}
+                      className="w-full flex items-center gap-2 mb-2 px-2 py-1.5 rounded-lg hover:bg-white/5 transition-colors"
+                    >
+                      <button className="p-0.5 shrink-0">
+                        <svg 
+                          className={`w-3.5 h-3.5 transition-transform duration-200 ${
+                            collapsedFiles.has(component.id) ? '-rotate-90' : ''
+                          }`} 
+                          fill="none" 
+                          stroke="currentColor" 
+                          viewBox="0 0 24 24"
+                        >
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                        </svg>
+                      </button>
                       <svg className="w-4 h-4 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
                       </svg>
                       <span className="font-semibold text-sm text-white/90">{component.name}</span>
                       <span className="ml-auto text-xs text-white/30">{component.versions.length}</span>
-                    </div>
+                    </button>
                     
+                    {!collapsedFiles.has(component.id) && (
                     <div className="space-y-1.5">
                       {component.versions.map((version, verIdx) => (
                         <button
@@ -574,6 +776,7 @@ export default function UICodeGenerator({ initialProjects = [], user }) {
                         </button>
                       ))}
                     </div>
+                    )}
                   </div>
                 ))}
               </div>

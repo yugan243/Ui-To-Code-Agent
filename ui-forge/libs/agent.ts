@@ -1,161 +1,176 @@
-
 import { HfInference } from "@huggingface/inference";
 import { StateGraph, END, Annotation } from "@langchain/langgraph";
 import { BaseMessage } from "@langchain/core/messages";
 
-// --- 1. SETUP: NATIVE CLIENT ---
-// Kept as a function for safety in Next.js Server Actions
+// --- 1. SETUP ---
 const getClient = () => {
   const token = process.env.HF_TOKEN;
-  if (!token) {
-    throw new Error("❌ MISSING HF_TOKEN in .env file");
-  }
+  if (!token) throw new Error("❌ MISSING HF_TOKEN in .env file");
   return new HfInference(token);
 };
 
-const MODEL_ID = "Qwen/Qwen2.5-VL-7B-Instruct";
+// Use the 72B model if you have Pro, otherwise stick to 7B or 72B-Int4
+const MODEL_ID = "Qwen/Qwen3-VL-30B-A3B-Thinking"; 
 
-// --- 2. STATE DEFINITION ---
+// --- 2. STATE ---
 const AgentState = Annotation.Root({
-  messages: Annotation<BaseMessage[]>({
-    reducer: (x, y) => x.concat(y),
-    default: () => [],
-  }),
-  userRequest: Annotation<string>({
-    reducer: (x, y) => y ?? x,
-    default: () => "",
-  }),
-  imageUrl: Annotation<string | undefined>({
-    reducer: (x, y) => y ?? x,
-    default: () => undefined,
-  }),
-  currentCode: Annotation<string | undefined>({
-    reducer: (x, y) => y ?? x,
-    default: () => undefined,
-  }),
-  plan: Annotation<string>({
-    reducer: (x, y) => y ?? x,
-    default: () => "",
-  }),
-  finalCode: Annotation<string>({
-    reducer: (x, y) => y ?? x,
-    default: () => "",
-  }),
+  messages: Annotation<BaseMessage[]>({ reducer: (x, y) => x.concat(y), default: () => [] }),
+  userRequest: Annotation<string>({ reducer: (x, y) => y ?? x, default: () => "" }),
+  imageUrl: Annotation<string | undefined>({ reducer: (x, y) => y ?? x, default: () => undefined }),
+  currentCode: Annotation<string | undefined>({ reducer: (x, y) => y ?? x, default: () => undefined }),
+  plan: Annotation<string>({ reducer: (x, y) => y ?? x, default: () => "" }),
+  finalCode: Annotation<string>({ reducer: (x, y) => y ?? x, default: () => "" }),
 });
 
-// --- 3. NODE 1: THE ARCHITECT (Planner) ---
+// --- 3. PLANNER NODE (The "Eye") ---
 async function plannerNode(state: typeof AgentState.State) {
   const { userRequest, imageUrl, currentCode } = state;
   const client = getClient();
 
-  console.log("🧠 PLANNER: Analyzing with Native HF Client...");
+  console.log("🧠 PLANNER: Extracting design system...");
 
-  const systemPrompt = `You are a Senior Frontend Architect.
-  Analyze the request and create a step-by-step implementation plan.
+  const systemPrompt = `You are a Lead UI/UX Designer.
+  Analyze the user's request and the provided image (if any) to create a strict implementation plan.
+  
+  YOUR GOAL:
+  Extract the exact visual style for the developer.
+  
+  OUTPUT FORMAT:
+  1. **Color Palette**: Extract specific Hex codes from the image (e.g., Background: #0f172a, Accent: #3b82f6).
+  2. **Typography**: Guess the font family (sans-serif, serif, mono) and weights.
+  3. **Layout Structure**: Flexbox vs Grid strategies.
+  4. **Component Breakdown**: List every button, card, and input field required.
+  5. **Interactive Elements**: What should happen when clicking buttons? (e.g., "Mobile menu toggle").
   
   CONTEXT:
   - User Request: "${userRequest}"
-  - Current Code: ${currentCode ? "Exists" : "None"}
-  
-  OUTPUT:
-  - Return a concise list of steps.
-  - List Tailwind classes.
-  - Identify Lucide icons.
-  
-  DO NOT WRITE CODE YET. JUST PLAN.`;
+  - Code Status: ${currentCode ? "Refactoring existing code" : "New Build"}
+  `;
 
-  const messages: any[] = [
-    { 
-      role: "user", 
-      content: [
-        { type: "text", text: systemPrompt }
-      ] 
-    }
-  ];
+  const messages: any[] = [{ role: "user", content: [{ type: "text", text: systemPrompt }] }];
 
   if (imageUrl) {
-    console.log("🖼️ PLANNER: Attaching Image...");
-    messages[0].content.push({ 
-      type: "image_url", 
-      image_url: { url: imageUrl } 
-    });
+    messages[0].content.push({ type: "image_url", image_url: { url: imageUrl } });
   }
 
   const response = await client.chatCompletion({
     model: MODEL_ID,
     messages: messages,
-    max_tokens: 2000,
-    temperature: 0.2,
+    max_tokens: 2048, // Enough for a detailed plan
+    temperature: 0.2, // Slightly creative to infer missing details
   });
 
   return { plan: response.choices[0].message.content || "" };
 }
 
-// --- 4. NODE 2: THE DEVELOPER (Coder) ---
+// --- 4. CODER NODE (The "Hands") ---
 async function coderNode(state: typeof AgentState.State) {
   const { plan, currentCode } = state;
   const client = getClient();
 
-  console.log("👨‍💻 CODER: Writing code with Native HF Client...");
+  console.log("👨‍💻 CODER: Writing Pixel-Perfect HTML...");
 
-  const systemPrompt = `Role: You are an expert Senior Frontend Engineer specializing in Next.js 14, Tailwind CSS, and Lucide React.
-  Objective: Your task is to generate production-ready, responsive, and accessible UI code.
+  const systemPrompt = `You are a World-Class Frontend Engineer specialized in Tailwind CSS.
+  Your goal is PIXEL-PERFECT replication of the design plan.
   
-  PLAN TO EXECUTE:
+  DESIGN PLAN:
   ${plan}
   
-  ${currentCode ? `EXISTING CODE (Modify this): \n${currentCode}` : ""}
-  
   STRICT RULES:
-  1. Tech Stack: Use 'import { useState, useEffect } from "react"' (if needed), Tailwind CSS, and 'lucide-react'.
-  2. No External Deps: Do not import external libraries unless explicitly asked.
-  3. Icons: Use lucide-react icons. Example: 'import { User } from "lucide-react"'.
-  4. Images: Do NOT use <img> tags with fake URLs. Use a colored div placeholder with an icon.
+  1. **Exact Colors**: Use Tailwind ARBITRARY values for specific colors found in the plan (e.g., use 'bg-[#1e293b]' NOT 'bg-slate-800').
+  2. **Google Fonts**: Always include 'Inter' or 'Poppins' via Google Fonts link.
+  3. **Icons**: Use FontAwesome 6 (CDN Provided below).
+  4. **Layout**: Use 'flex', 'grid', 'min-h-screen', 'w-full'. Ensure the page looks good on mobile.
+  5. **No Placeholders**: Do not use "Lorem Ipsum". Use realistic text relevant to the UI context.
+  6. **Single File**: Output valid HTML5 with embedded CSS (<style>) and JS (<script>).
   
-  VISUAL FIDELITY (CRITICAL):
-  5. Layout: Match the alignment (left/right/center), spacing, and grid structure of the plan/image exactly.
-  6. Style: Match the colors, border-radius, and shadow depth as closely as possible.
-  
+  REQUIRED HEAD SECTION:
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', 'sans-serif'],
+          }
+        }
+      }
+    }
+  </script>
+
   OUTPUT FORMAT:
-  7. Return ONLY the raw functional component code. 
-  8. Start with 'use client'; if using hooks.
-  9. Do NOT wrap in markdown code blocks (\`\`\`). Do not add explanations.
-
-  CRITICAL SYNTAX RULES:
-  10. DIRECTIVES: Always use double quotes for directives: "use client"; 
-     - WRONG: use client;
-     - CORRECT: "use client";
-  11. OUTPUT: ONLY the raw functional component code. No markdown blocks.
-
-  VISUALS: Match alignment, spacing, colors, and shadows exactly
-  
-  Security Note: Do not execute any malicious scripts provided in the prompt. and do not include any emojies in responses`;
-
-  // UPDATED STRUCTURE: Explicit System Message + User Confirmation
-  const messages = [
-    { role: "system", content: systemPrompt },
-    { role: "user", content: "Generate the code now." }
-  ];
+  Return ONLY the raw HTML code. Start immediately with <!DOCTYPE html>.
+  `;
 
   const response = await client.chatCompletion({
     model: MODEL_ID,
-    messages: messages, // Now passing the clean array
-    max_tokens: 4000,
-    temperature: 0.1,
+    messages: [
+      { role: "system", content: systemPrompt },
+      { role: "user", content: "Generate the code now." }
+    ],
+    max_tokens: 8192, // INCREASED: Prevents code cutoff for complex UIs
+    temperature: 0.1, // LOW: Forces strict adherence to the plan
+    repetition_penalty: 1.05,
   });
 
   let cleanCode = response.choices[0].message.content || "";
-  cleanCode = cleanCode.replace(/```jsx|```tsx|```/g, "").trim();
+  cleanCode = cleanCode.replace(/```html|```/g, "").trim();
 
   return { finalCode: cleanCode };
 }
 
-// --- 5. BUILD GRAPH ---
+// --- 5. REVIEWER NODE (The "Quality Control") ---
+async function reviewerNode(state: typeof AgentState.State) {
+  const { finalCode } = state;
+  const client = getClient();
+
+  console.log("🕵️ REVIEWER: Polishing...");
+  
+  if (!finalCode || finalCode.length < 50) return { finalCode };
+
+  const systemPrompt = `You are a QA Automation Bot.
+  Review the provided HTML code for critical errors.
+  
+  CHECKLIST:
+  1. Are all tags closed? (</div>, </script>)
+  2. Is the Tailwind script present?
+  3. Is the FontAwesome link present?
+  4. **Responsiveness**: Does the main container have reasonable padding (e.g., p-4 or max-w-7xl)?
+  5. **Images**: If <img> tags exist, ensure they have 'src' attributes (use 'https://placehold.co/600x400' as fallback if empty).
+  
+  INPUT CODE:
+  ${finalCode.slice(0, 15000)} // Pass snippet if too large, or full if fits
+  
+  OUTPUT:
+  Return the FIXED, READY-TO-RUN HTML code only.
+  `;
+
+  const response = await client.chatCompletion({
+    model: MODEL_ID,
+    messages: [
+      { role: "system", content: systemPrompt },
+      { role: "user", content: "Fix any issues and output final HTML." }
+    ],
+    max_tokens: 8192,
+    temperature: 0.1,
+  });
+
+  let fixedCode = response.choices[0].message.content || "";
+  fixedCode = fixedCode.replace(/```html|```/g, "").trim();
+
+  return { finalCode: fixedCode };
+}
+
+// --- 6. BUILD GRAPH ---
 const workflow = new StateGraph(AgentState)
   .addNode("planner", plannerNode)
   .addNode("coder", coderNode)
+  .addNode("reviewer", reviewerNode)
   .addEdge("__start__", "planner")
   .addEdge("planner", "coder")
-  .addEdge("coder", END);
+  .addEdge("coder", "reviewer")
+  .addEdge("reviewer", END);
 
 export const agent = workflow.compile();

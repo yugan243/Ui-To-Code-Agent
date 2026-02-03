@@ -20,6 +20,7 @@
     "@prisma/adapter-neon": "^7.3.0",
     "@prisma/client": "^6.19.2",
     "bcryptjs": "^3.0.3",
+    "cloudinary": "^2.9.0",
     "next": "16.1.6",
     "next-auth": "^5.0.0-beta.30",
     "openai": "^6.17.0",

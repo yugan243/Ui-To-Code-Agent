@@ -130,6 +130,11 @@ export default function LoginPage({ onLoginSuccess }) {
         }
       }
     } catch (error) {
+      // NEXT_REDIRECT is thrown on successful login - this is expected
+      // Don't show error, the redirect is happening
+      if (error?.digest?.includes('NEXT_REDIRECT')) {
+        return; // Let the redirect happen silently
+      }
       console.error('Login error:', error);
       setError('Something went wrong. Please try again.');
       setIsLoading(false);

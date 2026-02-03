@@ -9,7 +9,8 @@ export async function generateComponent(
   projectId: string, 
   prompt: string, 
   imageUrl?: string,
-  currentCode?: string
+  currentCode?: string,
+  activeFileId?: string // The file (Screen) the user is working on
 ) {
   const session = await auth();
   if (!session?.user?.id) return { error: "Unauthorized" };
@@ -43,7 +44,8 @@ export async function generateComponent(
 
     if (!chatSession) throw new Error("Session not found");
 
-    let fileId = chatSession.files[0]?.id;
+    // Use the active file if provided, otherwise fall back to first file or create one
+    let fileId = activeFileId || chatSession.files[0]?.id;
 
     if (!fileId) {
       const newFile = await prisma.uIFile.create({

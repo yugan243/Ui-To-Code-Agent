@@ -45,13 +45,12 @@ model User {
   name          String?
   email         String?   @unique
   emailVerified DateTime?
-  image         String?   // Profile picture from Google/FB
-  password      String?   // Hashed password (null for OAuth-only accounts)
+  image         String?
+  password      String?   // Null for OAuth-only accounts
   
   accounts      Account[]
   sessions      Session[]
   
-  // RELATIONSHIP TO YOUR APP
   projects      Project[]
   
   createdAt     DateTime  @default(now())
@@ -71,12 +70,12 @@ model VerificationToken {
 // =========================================================
 
 model Project {
-  id          String   @id @default(uuid())
-  name        String   
+  id          String    @id @default(uuid())
+  name        String    
   description String?
   
   userId      String
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   
   sessions    ChatSession[]
 
@@ -85,11 +84,11 @@ model Project {
 }
 
 model ChatSession {
-  id        String   @id @default(uuid())
-  title     String   @default("New Chat") 
+  id        String    @id @default(uuid())
+  title     String    @default("New Chat") 
   
   projectId String
-  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  project   Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
   messages  ChatMessage[]
   files     UIFile[]
@@ -105,13 +104,10 @@ model ChatMessage {
   role      Role        
   content   String      @db.Text
   
-  // --- 1. HANDLING IMAGES IN CHAT HISTORY ---
-  // If a user uploads an image in the middle of a chat, handle it here too.
-  
-  imageUrl        String?   // PERMANENT: The Cloud Storage URL (e.g., https://storage.googleapis.com/...)
-  
-  geminiFileUri   String?   // TEMPORARY: The Gemini File API URI (e.g., https://generativelanguage...)
-  geminiUploadTime DateTime? // EXPIRATION: Used to check if 48h has passed since upload
+  // --- FINAL ARCHITECTURE: PERMANENT STORAGE ONLY ---
+  // Stores the Cloudinary URL (e.g. "https://res.cloudinary.com/...")
+  // We removed the temporary Gemini fields because we send Base64 directly to the model now.
+  imageUrl  String?     
   
   createdAt DateTime    @default(now())
 }
@@ -123,33 +119,28 @@ enum Role {
 }
 
 // =========================================================
-// 3. FILE SYSTEM (The "Scenarios")
+// 3. FILE SYSTEM
 // =========================================================
 
 model UIFile {
-  id              String      @id @default(uuid())
-  sessionId       String
-  session         ChatSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
-  name            String    
+  id          String      @id @default(uuid())
+  sessionId   String
+  session     ChatSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  name        String      
 
-  // --- 2. THE CONTEXT SWITCHING ENGINE ---
-  // This is where we store the "Master Image" for this component.
+  // --- FINAL ARCHITECTURE: CONTEXT REFERENCE ---
+  // If a component was created from an image, this is the "Master" source URL.
+  referenceImageUrl String? 
+
+  versions        CodeVersion[]
+  currentVersion  Int       @default(1) 
   
-  referenceImageUrl String?   // PERMANENT: The Cloud Storage URL (Your "Source of Truth")
-
-  // NEW FIELDS FOR JIT STRATEGY
-  geminiFileUri     String?   // TEMPORARY: The Gemini URI. If null or old, we re-create it using referenceImageUrl.
-  geminiUploadTime  DateTime? // EXPIRATION: If (now - thisTime > 46h), we re-upload.
-
-  versions          CodeVersion[]
-  currentVersion    Int       @default(1) 
-  
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 }
 
 // =========================================================
-// 4. VERSION CONTROL (The Code History)
+// 4. VERSION CONTROL
 // =========================================================
 
 model CodeVersion {

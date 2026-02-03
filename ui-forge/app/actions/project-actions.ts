@@ -91,32 +91,89 @@ export async function getProjectChatHistory(projectId: string) {
 
   if (!chatSession) return [];
 
-  return chatSession.messages;
+  // Normalize role to lowercase for UI consistency
+  // Database stores as 'USER'/'ASSISTANT' but UI expects 'user'/'assistant'
+  return chatSession.messages.map(msg => ({
+    ...msg,
+    role: msg.role.toLowerCase()
+  }));
 }
 
-// 4. Save a User Message
-export async function saveUserMessage(projectId: string, content: string, role: 'USER' | 'ASSISTANT' = 'USER') {
+// --- UPDATED: Save Message with Image URL ---
+export async function saveUserMessage(
+  projectId: string, 
+  content: string, 
+  role: 'USER' | 'ASSISTANT', 
+  imageUrl?: string | null // <--- NEW PARAMETER
+) {
   const session = await auth();
-  if (!session?.user?.id) return { success: false };
+  if (!session?.user?.id) return { success: false, error: "Unauthorized" };
 
-  // 1. Find the Chat Session ID for this project
-  const chatSession = await prisma.chatSession.findFirst({
-    where: {
-      projectId: projectId,
-      project: { userId: session.user.id }
+  try {
+    // 1. Find the active session for this project
+    let chatSession = await prisma.chatSession.findFirst({
+      where: { projectId: projectId },
+      orderBy: { updatedAt: 'desc' }
+    });
+
+    // Create session if it doesn't exist (safety check)
+    if (!chatSession) {
+      chatSession = await prisma.chatSession.create({
+        data: { projectId: projectId, title: "New Chat" }
+      });
     }
-  });
 
-  if (!chatSession) return { success: false, error: "No session found" };
+    // 2. Save the message with the URL
+    const message = await prisma.chatMessage.create({
+      data: {
+        sessionId: chatSession.id,
+        role: role,
+        content: content,
+        imageUrl: imageUrl || null, // <--- SAVING THE CLOUDINARY URL
+      },
+    });
 
-  // 2. Create the Message
-  const newMessage = await prisma.chatMessage.create({
-    data: {
-      sessionId: chatSession.id,
-      role: role,
-      content: content
-    }
-  });
+    return { success: true, messageId: message.id };
+  } catch (error) {
+    console.error("Failed to save message:", error);
+    return { success: false, error: "Database error" };
+  }
+}
 
-  return { success: true, message: newMessage };
+// --- NEW FUNCTION: Create a File Entry ("Screen X") ---
+export async function createUIFile(projectId: string, imageUrl: string) {
+  const session = await auth();
+  if (!session?.user?.id) return { success: false, error: "Unauthorized" };
+
+  try {
+    // 1. Find the active Chat Session
+    const chatSession = await prisma.chatSession.findFirst({
+      where: { projectId },
+      orderBy: { updatedAt: 'desc' }
+    });
+
+    if (!chatSession) throw new Error("No active session found");
+
+    // 2. Count existing files to generate the name (e.g., "Screen 1", "Screen 2")
+    const fileCount = await prisma.uIFile.count({
+      where: { sessionId: chatSession.id }
+    });
+
+    const newName = `Screen ${fileCount + 1}`;
+
+    // 3. Create the File Record
+    const newFile = await prisma.uIFile.create({
+      data: {
+        sessionId: chatSession.id,
+        name: newName,
+        referenceImageUrl: imageUrl, // Storing the Cloudinary URL
+        currentVersion: 1
+      }
+    });
+
+    return { success: true, file: newFile };
+  } catch (error) {
+    console.error("Failed to create file:", error);
+    return { success: false, error: "Database error" };
+  }
 }

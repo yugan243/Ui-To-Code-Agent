@@ -100,7 +100,13 @@ export async function login(formData: FormData) {
 
     return { success: true };
   } catch (error) {
-    // Handle NextAuth errors
+    // NextAuth throws NEXT_REDIRECT on successful login - this is expected behavior
+    // We need to re-throw it immediately so Next.js can handle the redirect
+    if (error instanceof Error && error.message.includes('NEXT_REDIRECT')) {
+      throw error;
+    }
+    
+    // Handle NextAuth authentication errors
     if (error instanceof AuthError) {
       switch (error.type) {
         case 'CredentialsSignin':
@@ -109,7 +115,7 @@ export async function login(formData: FormData) {
           return { error: 'Something went wrong' };
       }
     }
-    throw error; // Re-throw for Next.js redirect
+    throw error; // Re-throw for any other errors
   }
 }
 
