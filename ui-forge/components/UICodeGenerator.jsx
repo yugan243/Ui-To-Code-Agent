@@ -45,9 +45,7 @@ export default function UICodeGenerator({ initialProjects = [], user }) {
   });
   const [activeVersion, setActiveVersion] = useState(null);
   const [viewMode, setViewMode] = useState('split'); // 'code', 'preview', 'split'
-  const [messages, setMessages] = useState([
-    { id: 1, role: 'assistant', content: 'Welcome! Upload a UI screenshot to generate code.' }
-  ]);
+  const [messages, setMessages] = useState([]);
   const [inputValue, setInputValue] = useState('');
   const [contextSwitch, setContextSwitch] = useState(null);
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -125,10 +123,8 @@ export default function UICodeGenerator({ initialProjects = [], user }) {
         if (history && history.length > 0) {
           setMessages(history);
         } else {
-          // If no history, show default welcome message
-          setMessages([
-            { id: 'welcome', role: 'assistant', content: 'Welcome! Upload a UI screenshot to generate code.' }
-          ]);
+          // If no history, start with empty messages
+          setMessages([]);
         }
       } catch (err) {
         console.error("Failed to load chat:", err);

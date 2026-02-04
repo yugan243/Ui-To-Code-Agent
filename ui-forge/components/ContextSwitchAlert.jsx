@@ -13,7 +13,7 @@ export default function ContextSwitchAlert({ componentName, onClose }) {
 
   return (
     <div className="fixed inset-0 z-100 flex items-center justify-center pointer-events-none animate-fade-in">
-      <div className="pointer-events-auto bg-white/10 backdrop-blur-2xl border border-white/20 rounded-2xl px-8 py-6 shadow-2xl shadow-indigo-500/20 animate-scale-in">
+      <div className="pointer-events-auto bg-[#1a1a2e] border border-white/30 rounded-2xl px-8 py-6 shadow-2xl shadow-indigo-500/20 animate-scale-in">
         <div className="flex items-center gap-4">
           {/* Rotating Icon */}
           <div className="relative">
