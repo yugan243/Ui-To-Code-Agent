@@ -7,6 +7,7 @@ import { signOut } from 'next-auth/react';
 import ContextSwitchAlert from './ContextSwitchAlert';
 import { generateComponent } from '@/app/actions/generate';
 import SandpackPreview from './SandpackPreview';
+import PersonalizationModal from './PersonalizationModal';
 
 // Helper: Transforms Database Structure -> UI Structure
 const transformToUI = (dbProjects) => {
@@ -21,6 +22,7 @@ const transformToUI = (dbProjects) => {
       session.files?.map(file => ({
         id: file.id,
         name: file.name,
+        referenceImageUrl: file.referenceImageUrl, // 👈 FIX: Include the reference image URL
         versions: file.versions.map(v => ({
           id: v.id,
           name: `v${v.versionNumber}`, // e.g. "v1"
@@ -56,6 +58,7 @@ export default function UICodeGenerator({ initialProjects = [], user }) {
   const [searchQuery, setSearchQuery] = useState(''); // Search projects
   const [typingText, setTypingText] = useState(''); // For typing animation
   const [isTyping, setIsTyping] = useState(false); // Typing state
+  const [showPersonalizationModal, setShowPersonalizationModal] = useState(false); // Personalization modal
   
   // Auto-logout after 5 minutes of inactivity
   useEffect(() => {
@@ -371,13 +374,25 @@ export default function UICodeGenerator({ initialProjects = [], user }) {
          const currentProject = projects.find(p => p.id === activeProject);
          const activeFile = currentProject?.components.find(c => c.id === activeFileId);
 
+         console.log("🖼️ Context Re-use Check:", {
+           activeFileId,
+           activeFile: activeFile?.name,
+           hasReferenceUrl: !!activeFile?.referenceImageUrl,
+           referenceUrl: activeFile?.referenceImageUrl?.slice(0, 50) + "..."
+         });
+
          if (activeFile?.referenceImageUrl) {
             // Fetch cached image as Base64 so AI can see it
             const cachedBase64 = await getActiveContextImage(activeFile.referenceImageUrl);
+            console.log("📷 Fetched cached image:", cachedBase64 ? "SUCCESS (base64 length: " + cachedBase64.length + ")" : "FAILED");
             if (cachedBase64) {
                 imagePayload = cachedBase64; 
             }
+         } else {
+            console.log("⚠️ No referenceImageUrl found for active file");
          }
+      } else {
+         console.log("⚠️ No activeFileId and no new image uploaded");
       }
 
       // Save Message to DB with the Cloudinary URL (if image was uploaded)
@@ -388,92 +403,63 @@ export default function UICodeGenerator({ initialProjects = [], user }) {
         id: tempAiId, 
         role: 'assistant', 
         content: '',
-        isGenerating: true
+        isGenerating: true,
+        isTypingIndicator: true  // 👈 Flag for WhatsApp-style dots
       }]);
-
-      // Progressive status updates with typing effect
-      const stages = [
-        { emoji: '🧠', text: 'Extracting design system and planning...', duration: 5000 },
-        { emoji: '👨\u200d💻', text: 'Writing pixel-perfect HTML with Tailwind...', duration: 7000 },
-        { emoji: '🕵️', text: 'Polishing and fixing...', duration: 4000 }
-      ];
-
-      let currentStage = 0;
-      const typeMessage = async (text, messageId) => {
-        setIsTyping(true);
-        for (let i = 0; i <= text.length; i++) {
-          setMessages(prev => prev.map(msg => 
-            msg.id === messageId 
-              ? { ...msg, content: text.substring(0, i) }
-              : msg
-          ));
-          await new Promise(resolve => setTimeout(resolve, 20));
-        }
-        setIsTyping(false);
-      };
-
-      // Start first stage immediately
-      typeMessage(`${stages[0].emoji} ${stages[0].text}`, tempAiId);
 
       const currentCode = activeVersionData?.code || "";
       
-      // Start generation and update stages
-      const generationPromise = generateComponent(activeProject, userText, imagePayload, currentCode, currentFileId);
+      // Debug: Log what we're sending to the agent
+      console.log("Calling generateComponent with:", {
+        projectId: activeProject,
+        userText: userText.slice(0, 50) + (userText.length > 50 ? "..." : ""),
+        hasImagePayload: !!imagePayload,
+        imagePayloadType: typeof imagePayload,
+        imagePayloadLength: imagePayload ? (imagePayload.length || 'N/A') : 0,
+        hasCurrentCode: !!currentCode,
+        currentFileId
+      });
       
-      // Update to stage 2 after delay
-      setTimeout(() => {
-        if (currentStage < 1) {
-          currentStage = 1;
-          typeMessage(`${stages[1].emoji} ${stages[1].text}`, tempAiId);
-        }
-      }, stages[0].duration);
-      
-      // Update to stage 3 after delay
-      setTimeout(() => {
-        if (currentStage < 2) {
-          currentStage = 2;
-          typeMessage(`${stages[2].emoji} ${stages[2].text}`, tempAiId);
-        }
-      }, stages[0].duration + stages[1].duration);
-      
-      const result = await generationPromise;
+      // Start generation (typing indicator shows while waiting)
+      const result = await generateComponent(activeProject, userText, imagePayload, currentCode, currentFileId);
 
       if (result.success) {
-        // Show success message, then add AI's conversational reply as a new message
-        setMessages(prev => prev.map(msg => 
-          msg.id === tempAiId 
-            ? { ...msg, content: "✅ Generated! Check the preview.", isGenerating: false } 
-            : msg
-        ));
-
-        // Add the AI's conversational reply as a separate message
+        // Remove the typing indicator and add the AI's conversational reply
         if (result.reply) {
-          const replyId = Date.now() + 2;
-          setMessages(prev => [...prev, {
-            id: replyId,
-            role: 'assistant',
-            content: result.reply,
-            isGenerating: false
-          }]);
-        }
-
-        // Reload the project data from the database to get the new version
-        const updatedProject = await getProjectById(activeProject);
-        if (updatedProject) {
-          const updatedProjectUI = transformToUI([updatedProject])[0];
-          setProjects(prevProjects => prevProjects.map(proj => 
-            proj.id === activeProject ? updatedProjectUI : proj
+          setMessages(prev => prev.map(msg => 
+            msg.id === tempAiId 
+              ? { ...msg, content: result.reply, isGenerating: false, isTypingIndicator: false } 
+              : msg
+          ));
+        } else {
+          // Fallback message if no reply
+          setMessages(prev => prev.map(msg => 
+            msg.id === tempAiId 
+              ? { ...msg, content: "✅ Done! Check the preview.", isGenerating: false, isTypingIndicator: false } 
+              : msg
           ));
         }
 
-        setActiveVersion(result.versionId);
-        setViewMode('preview');
-        setRightSidebarOpen(true); 
+        // Only update preview if code was actually generated (not a non-coding question)
+        if (result.code && result.versionId) {
+          // Reload the project data from the database to get the new version
+          const updatedProject = await getProjectById(activeProject);
+          if (updatedProject) {
+            const updatedProjectUI = transformToUI([updatedProject])[0];
+            setProjects(prevProjects => prevProjects.map(proj => 
+              proj.id === activeProject ? updatedProjectUI : proj
+            ));
+          }
+
+          setActiveVersion(result.versionId);
+          setViewMode('preview');
+          setRightSidebarOpen(true);
+        }
 
       } else {
         setMessages(prev => prev.map(msg => 
           msg.id === tempAiId 
-            ? { ...msg, content: `Error: ${result.error}` } 
+            ? { ...msg, content: `❌ ${result.error}`, isGenerating: false, isTypingIndicator: false } 
             : msg
         ));
       }
@@ -528,9 +514,9 @@ export default function UICodeGenerator({ initialProjects = [], user }) {
     currentProject?.components.flatMap(c => c.versions).find(v => v.id === activeVersion) : null;
 
   return (
-    <div className="h-screen bg-[#0f0f23] text-white font-dm overflow-hidden relative">
-      {/* Animated Background Orbs */}
-      <div className="absolute inset-0 overflow-hidden pointer-events-none">
+    <div className="h-screen bg-[var(--background)] text-[var(--text-primary)] font-dm overflow-hidden relative transition-colors duration-200">
+      {/* Animated Background Orbs - Only visible in dark mode */}
+      <div className="absolute inset-0 overflow-hidden pointer-events-none dark:opacity-100 opacity-0 transition-opacity duration-200">
         <div className="absolute w-125 h-125 bg-linear-to-br from-indigo-500 to-pink-500 rounded-full blur-[100px] opacity-30 -top-40 -left-20 animate-float" />
         <div className="absolute w-100 h-100 bg-linear-to-br from-purple-500 to-pink-500 rounded-full blur-[100px] opacity-30 -bottom-32 -right-20 animate-float-delayed" />
         <div className="absolute w-87.5 h-87.5 bg-linear-to-br from-cyan-500 to-blue-500 rounded-full blur-[100px] opacity-20 top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 animate-float-slow" />
@@ -541,10 +527,10 @@ export default function UICodeGenerator({ initialProjects = [], user }) {
         
         {/* LEFT SIDEBAR - Projects & Chats */}
         <div className={`transition-all duration-300 ease-out ${leftSidebarOpen ? 'w-80' : 'w-16'} relative shrink-0`}>
-          <div className="h-full bg-white/5 backdrop-blur-xl border-r border-white/10 flex flex-col">
+          <div className="h-full bg-[var(--sidebar-bg)] backdrop-blur-xl border-r border-[var(--border-color)] flex flex-col transition-colors duration-200">
             
             {/* Header - Logo and Toggle */}
-            <div className={`p-3 border-b border-white/10 flex items-center ${leftSidebarOpen ? 'justify-between' : 'justify-center'}`}>
+            <div className={`p-3 border-b border-[var(--border-color)] flex items-center ${leftSidebarOpen ? 'justify-between' : 'justify-center'}`}>
               {leftSidebarOpen ? (
                 <>
                   {/* Expanded: Logo on left */}
@@ -620,9 +606,9 @@ export default function UICodeGenerator({ initialProjects = [], user }) {
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                     placeholder="Search projects..."
-                    className="w-full px-3 py-2 pl-9 bg-white/5 border border-white/10 rounded-lg text-sm focus:outline-none focus:border-indigo-500/50 focus:bg-white/8 transition-all"
+                    className="w-full px-3 py-2 pl-9 bg-[var(--input-bg)] border border-[var(--input-border)] rounded-lg text-sm text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-[var(--input-focus-border)] transition-all"
                   />
-                  <svg className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-white/40" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <svg className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-tertiary)]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
                   </svg>
                 </div>
@@ -632,13 +618,13 @@ export default function UICodeGenerator({ initialProjects = [], user }) {
               <div className="px-3 pb-3">
                 <button 
                   onClick={() => setLeftSidebarOpen(true)}
-                  className="w-10 h-10 bg-white/10 hover:bg-white/15 rounded-lg transition-all duration-300 flex items-center justify-center mx-auto group relative"
+                  className="w-10 h-10 bg-[var(--hover-bg)] hover:bg-[var(--active-bg)] rounded-lg transition-all duration-300 flex items-center justify-center mx-auto group relative"
                   title="Search projects"
                 >
                   <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
                   </svg>
-                  <div className="absolute left-full ml-2 px-2 py-1 bg-black/90 text-white text-xs rounded whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
+                  <div className="absolute left-full ml-2 px-2 py-1 bg-[var(--surface-elevated)] text-[var(--text-primary)] text-xs rounded whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none border border-[var(--border-color)]">
                     Search
                   </div>
                 </button>
@@ -647,7 +633,7 @@ export default function UICodeGenerator({ initialProjects = [], user }) {
 
             {/* Projects List */}
             {leftSidebarOpen && (
-            <div className="flex-1 overflow-y-auto scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent">
+            <div className="flex-1 overflow-y-auto scrollbar-thin scrollbar-thumb-[var(--scrollbar-thumb)] scrollbar-track-transparent">
               <div className="p-3 space-y-2">
                 {projects
                   .filter(project => 
@@ -663,15 +649,15 @@ export default function UICodeGenerator({ initialProjects = [], user }) {
                       onClick={() => setActiveProject(project.id)}
                       className={`w-full text-left p-3 rounded-xl transition-all duration-300 ${
                         activeProject === project.id 
-                          ? 'bg-white/10 border border-indigo-500/50 shadow-lg shadow-indigo-500/20' 
-                          : 'bg-white/5 border border-transparent hover:bg-white/8 hover:border-white/10'
+                          ? 'bg-[var(--active-bg)] border border-indigo-500/50 shadow-lg shadow-indigo-500/20' 
+                          : 'bg-[var(--card-bg)] border border-transparent hover:bg-[var(--hover-bg)] hover:border-[var(--border-color)]'
                       }`}
                     >
                       <div className="flex items-start justify-between mb-2">
                         <div className="flex items-center gap-2 flex-1 min-w-0">
                           <button
                             onClick={(e) => toggleProjectCollapse(project.id, e)}
-                            className="p-0.5 hover:bg-white/10 rounded transition-colors shrink-0"
+                            className="p-0.5 hover:bg-[var(--hover-bg)] rounded transition-colors shrink-0"
                           >
                             <svg 
                               className={`w-3.5 h-3.5 transition-transform duration-200 ${
@@ -689,12 +675,12 @@ export default function UICodeGenerator({ initialProjects = [], user }) {
                         <span className={`text-xs px-2 py-0.5 rounded-full shrink-0 ${
                           activeProject === project.id 
                             ? 'bg-indigo-500/20 text-indigo-300' 
-                            : 'bg-white/10 text-white/50'
+                            : 'bg-[var(--hover-bg)] text-[var(--text-tertiary)]'
                         }`}>
                           {project.components.length}
                         </span>
                       </div>
-                      <div className="flex items-center gap-2 text-xs text-white/40">
+                      <div className="flex items-center gap-2 text-xs text-[var(--text-tertiary)]">
                         <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
                         </svg>
@@ -712,15 +698,15 @@ export default function UICodeGenerator({ initialProjects = [], user }) {
                             className={`
                               px-3 py-2 rounded-lg cursor-pointer flex items-center gap-2 transition-all duration-200
                               ${activeFileId === component.id 
-                                ? 'bg-indigo-500/20 text-white border border-indigo-500/30' // ACTIVE STYLE (Blueish)
-                                : 'text-white/60 hover:bg-white/5 hover:text-white'}          // INACTIVE STYLE
+                                ? 'bg-indigo-500/20 text-[var(--text-primary)] border border-indigo-500/30' // ACTIVE STYLE (Blueish)
+                                : 'text-[var(--text-secondary)] hover:bg-[var(--hover-bg)] hover:text-[var(--text-primary)]'}          // INACTIVE STYLE
                             `}
                           >
                             <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
                             </svg>
                             {component.name}
-                            <span className="ml-auto text-xs text-white/30">{component.versions.length}</span>
+                            <span className="ml-auto text-xs text-[var(--text-tertiary)]">{component.versions.length}</span>
                           </div>
                         </div>
                       ))}
@@ -733,13 +719,13 @@ export default function UICodeGenerator({ initialProjects = [], user }) {
             )}
 
             {/* User Profile Section - Bottom */}
-            <div className={`mt-auto border-t border-white/10 relative z-50 ${leftSidebarOpen ? 'p-3' : 'p-2'}`}>
+            <div className={`mt-auto border-t border-[var(--border-color)] relative z-50 ${leftSidebarOpen ? 'p-3' : 'p-2'}`}>
               {leftSidebarOpen ? (
                 <button
                   onClick={() => setShowProfileMenu(!showProfileMenu)}
-                  className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-white/5 transition-all duration-300 group"
+                  className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-[var(--hover-bg)] transition-all duration-300 group"
                 >
-                  <div className="w-10 h-10 rounded-full overflow-hidden bg-white/10 border border-white/20 shrink-0">
+                  <div className="w-10 h-10 rounded-full overflow-hidden bg-[var(--hover-bg)] border border-[var(--border-color)] shrink-0">
                     {user?.image ? (
                       <img src={user.image} alt={user.name || 'User'} className="w-full h-full object-cover" />
                     ) : (
@@ -750,10 +736,10 @@ export default function UICodeGenerator({ initialProjects = [], user }) {
                   </div>
                   <div className="flex-1 text-left min-w-0">
                     <div className="font-semibold text-sm truncate">{user?.name || 'User'}</div>
-                    <div className="text-xs text-white/40">Free</div>
+                    <div className="text-xs text-[var(--text-tertiary)]">Free</div>
                   </div>
                   <svg 
-                    className={`w-4 h-4 text-white/40 transition-transform duration-200 ${
+                    className={`w-4 h-4 text-[var(--text-tertiary)] transition-transform duration-200 ${
                       showProfileMenu ? 'rotate-180' : ''
                     }`} 
                     fill="none" 
@@ -767,9 +753,9 @@ export default function UICodeGenerator({ initialProjects = [], user }) {
                 <div className="relative group">
                   <button
                     onClick={() => setShowProfileMenu(!showProfileMenu)}
-                    className="w-full flex items-center justify-center p-2 rounded-xl hover:bg-white/5 transition-all duration-300"
+                    className="w-full flex items-center justify-center p-2 rounded-xl hover:bg-[var(--hover-bg)] transition-all duration-300"
                   >
-                    <div className="w-10 h-10 rounded-full overflow-hidden bg-white/10 border border-white/20 shrink-0">
+                    <div className="w-10 h-10 rounded-full overflow-hidden bg-[var(--hover-bg)] border border-[var(--border-color)] shrink-0">
                       {user?.image ? (
                         <img src={user.image} alt={user.name || 'User'} className="w-full h-full object-cover" />
                       ) : (
@@ -779,7 +765,7 @@ export default function UICodeGenerator({ initialProjects = [], user }) {
                       )}
                     </div>
                   </button>
-                  <div className="absolute left-full ml-2 bottom-0 px-3 py-2 bg-[#1a1a2e] text-white text-xs rounded-lg border border-white/10 whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none">
+                  <div className="absolute left-full ml-2 bottom-0 px-3 py-2 bg-[var(--surface-elevated)] text-[var(--text-primary)] text-xs rounded-lg border border-[var(--border-color)] whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none">
                     {user?.name || 'User'}
                   </div>
                 </div>
@@ -787,11 +773,11 @@ export default function UICodeGenerator({ initialProjects = [], user }) {
 
               {/* Profile Dropdown Menu */}
               {showProfileMenu && (
-                <div className="absolute bottom-full left-3 right-3 mb-2 bg-[#1a1a2e] border border-white/10 rounded-2xl shadow-2xl overflow-hidden animate-scale-in z-50">
+                <div className="absolute bottom-full left-3 right-3 mb-2 bg-[var(--modal-bg)] border border-[var(--border-color)] rounded-2xl shadow-2xl overflow-hidden animate-scale-in z-50">
                   {/* User Info Header */}
-                  <div className="p-4 border-b border-white/10 bg-white/5">
+                  <div className="p-4 border-b border-[var(--border-color)] bg-[var(--hover-bg)]">
                     <div className="flex items-center gap-3">
-                      <div className="w-12 h-12 rounded-full overflow-hidden bg-white/10 border border-white/20">
+                      <div className="w-12 h-12 rounded-full overflow-hidden bg-[var(--hover-bg)] border border-[var(--border-color)]">
                         {user?.image ? (
                           <img src={user.image} alt={user.name || 'User'} className="w-full h-full object-cover" />
                         ) : (
@@ -802,34 +788,40 @@ export default function UICodeGenerator({ initialProjects = [], user }) {
                       </div>
                       <div className="flex-1 min-w-0">
                         <div className="font-semibold text-sm truncate">{user?.name || 'User'}</div>
-                        <div className="text-xs text-white/50 truncate">{user?.email || 'No email'}</div>
+                        <div className="text-xs text-[var(--text-secondary)] truncate">{user?.email || 'No email'}</div>
                       </div>
                     </div>
                   </div>
 
                   {/* Menu Items */}
                   <div className="p-2">
-                    <button className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-white/5 transition-colors text-left group">
-                      <svg className="w-5 h-5 text-white/60 group-hover:text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <button 
+                      onClick={() => {
+                        setShowProfileMenu(false);
+                        setShowPersonalizationModal(true);
+                      }}
+                      className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-[var(--hover-bg)] transition-colors text-left group"
+                    >
+                      <svg className="w-5 h-5 text-[var(--text-secondary)] group-hover:text-[var(--text-primary)]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
                       </svg>
-                      <span className="text-sm text-white/80 group-hover:text-white">Personalization</span>
+                      <span className="text-sm text-[var(--text-secondary)] group-hover:text-[var(--text-primary)]">Personalization</span>
                     </button>
-                    <button className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-white/5 transition-colors text-left group">
-                      <svg className="w-5 h-5 text-white/60 group-hover:text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <button className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-[var(--hover-bg)] transition-colors text-left group">
+                      <svg className="w-5 h-5 text-[var(--text-secondary)] group-hover:text-[var(--text-primary)]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                       </svg>
-                      <span className="text-sm text-white/80 group-hover:text-white">Help</span>
+                      <span className="text-sm text-[var(--text-secondary)] group-hover:text-[var(--text-primary)]">Help</span>
                     </button>
                     <div className="h-px bg-white/10 my-2" />
                     <button 
                       onClick={handleLogout}
                       className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-red-500/10 transition-colors text-left group"
                     >
-                      <svg className="w-5 h-5 text-white/60 group-hover:text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <svg className="w-5 h-5 text-[var(--text-secondary)] group-hover:text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
                       </svg>
-                      <span className="text-sm text-white/80 group-hover:text-red-400">Log out</span>
+                      <span className="text-sm text-[var(--text-secondary)] group-hover:text-red-400">Log out</span>
                     </button>
                   </div>
                 </div>
@@ -841,7 +833,7 @@ export default function UICodeGenerator({ initialProjects = [], user }) {
         {/* CENTER - Chat Interface */}
         <div className="flex-1 flex flex-col min-w-0 relative">
           {/* Messages Area */}
-          <div className="flex-1 overflow-y-auto px-6 py-6 pb-40 scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent">
+          <div className="flex-1 overflow-y-auto px-6 py-6 pb-40 scrollbar-thin scrollbar-thumb-[var(--scrollbar-thumb)] scrollbar-track-transparent">
             <div className="max-w-4xl mx-auto space-y-4">
             {messages.map((message, idx) => (
               <div 
@@ -851,8 +843,8 @@ export default function UICodeGenerator({ initialProjects = [], user }) {
               >
                 <div className={`w-8 h-8 rounded-xl shrink-0 flex items-center justify-center ${
                   message.role === 'assistant' 
-                    ? 'bg-linear-to-br from-indigo-500 to-pink-500 shadow-lg shadow-indigo-500/30' 
-                    : 'bg-white/10 border border-white/20'
+                    ? 'bg-linear-to-br from-indigo-500 to-pink-500 shadow-lg shadow-indigo-500/30 text-white' 
+                    : 'bg-[var(--hover-bg)] border border-[var(--border-color)]'
                 }`}>
                   {message.role === 'assistant' ? (
                     <span className="text-sm font-bold">N</span>
@@ -865,12 +857,12 @@ export default function UICodeGenerator({ initialProjects = [], user }) {
                 <div className={`max-w-2xl ${message.role === 'user' ? 'items-end' : ''}`}>
                   <div className={`px-4 py-3 rounded-2xl backdrop-blur-xl ${
                     message.role === 'assistant' 
-                      ? 'bg-white/5 border border-white/10' 
-                      : 'bg-linear-to-r from-indigo-500/20 to-pink-500/20 border border-indigo-500/30'
+                      ? 'bg-[var(--chat-assistant-bg)] border border-[var(--border-color)]' 
+                      : 'bg-gradient-to-r from-indigo-500/20 to-pink-500/20 border border-indigo-500/30'
                   }`}>
                     {/* Show image if attached (Claude-style) */}
                     {message.image && (
-                      <div className="mb-3 rounded-lg overflow-hidden border border-white/10">
+                      <div className="mb-3 rounded-lg overflow-hidden border border-[var(--border-color)]">
                         <img 
                           src={message.image} 
                           alt="Attached" 
@@ -879,9 +871,20 @@ export default function UICodeGenerator({ initialProjects = [], user }) {
                       </div>
                     )}
                     <p className="text-sm leading-relaxed">
-                      {message.content}
-                      {message.isGenerating && (
-                        <span className="inline-block w-1 h-4 ml-1 bg-white/70 animate-pulse"></span>
+                      {message.isTypingIndicator ? (
+                        /* WhatsApp-style typing indicator */
+                        <span className="inline-flex items-center gap-1">
+                          <span className="w-2 h-2 bg-[var(--text-secondary)] rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></span>
+                          <span className="w-2 h-2 bg-[var(--text-secondary)] rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></span>
+                          <span className="w-2 h-2 bg-[var(--text-secondary)] rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></span>
+                        </span>
+                      ) : (
+                        <>
+                          {message.content}
+                          {message.isGenerating && (
+                            <span className="inline-block w-1 h-4 ml-1 bg-[var(--text-primary)] opacity-70 animate-pulse"></span>
+                          )}
+                        </>
                       )}
                     </p>
                   </div>
@@ -902,10 +905,10 @@ export default function UICodeGenerator({ initialProjects = [], user }) {
             {/* Welcome Message - Only shown when centered */}
             {!activeProject && messages.length <= 1 && (
               <div className="text-center mb-8 animate-fade-in">
-                <h2 className="font-syne font-bold text-4xl mb-3 bg-linear-to-r from-white via-indigo-200 to-pink-200 bg-clip-text text-transparent">
+                <h2 className="font-syne font-bold text-4xl mb-3 bg-gradient-to-r from-[var(--text-primary)] via-indigo-300 to-pink-300 bg-clip-text text-transparent">
                   Hi {user?.name?.split(' ')[0] || 'there'}! 👋
                 </h2>
-                <p className="text-white/50 text-lg">
+                <p className="text-[var(--text-secondary)] text-lg">
                   Let's turn your UI designs into beautiful code
                 </p>
               </div>
@@ -913,7 +916,7 @@ export default function UICodeGenerator({ initialProjects = [], user }) {
 
             <div className="max-w-4xl mx-auto px-6 relative">
 
-              <div className="relative bg-[#1a1a2e]/95 border border-white/10 rounded-2xl shadow-2xl focus-within:border-indigo-500/50 focus-within:ring-4 focus-within:ring-indigo-500/10 transition-all duration-300">
+              <div className="relative bg-[var(--surface-secondary)] border border-[var(--border-color)] rounded-2xl shadow-2xl focus-within:border-indigo-500/50 focus-within:ring-4 focus-within:ring-indigo-500/10 transition-all duration-300">
                 {/* Hidden File Input */}
                 <input 
                   type="file" 
@@ -926,16 +929,16 @@ export default function UICodeGenerator({ initialProjects = [], user }) {
                 {/* Image Preview - Inside Input Bar (Gemini Style) */}
                 {selectedImage && (
                   <div className="px-4 pt-3">
-                    <div className="inline-flex items-center gap-2 bg-white/5 border border-white/10 rounded-lg p-1.5 pr-2">
+                    <div className="inline-flex items-center gap-2 bg-[var(--hover-bg)] border border-[var(--border-color)] rounded-lg p-1.5 pr-2">
                       <div className="h-10 w-10 rounded-md overflow-hidden relative shrink-0">
                         <img src={selectedImage} alt="Preview" className="w-full h-full object-cover" />
                       </div>
-                      <span className="text-xs text-white/60 max-w-[100px] truncate">Image</span>
+                      <span className="text-xs text-[var(--text-secondary)] max-w-[100px] truncate">Image</span>
                       <button 
                         onClick={() => setSelectedImage(null)}
-                        className="w-5 h-5 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center transition-colors shrink-0"
+                        className="w-5 h-5 rounded-full bg-[var(--hover-bg)] hover:bg-[var(--active-bg)] flex items-center justify-center transition-colors shrink-0"
                       >
-                        <svg className="w-3 h-3 text-white/70" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <svg className="w-3 h-3 text-[var(--text-secondary)]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                         </svg>
                       </button>
@@ -954,12 +957,12 @@ export default function UICodeGenerator({ initialProjects = [], user }) {
                     }
                   }}
                   placeholder="Describe your UI or paste a screenshot..."
-                  className={`w-full bg-transparent px-5 py-4 pr-32 text-sm resize-none focus:outline-none scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent placeholder:text-white/30 ${selectedImage ? 'pt-2' : ''}`}
+                  className={`w-full bg-transparent px-5 py-4 pr-32 text-sm text-[var(--text-primary)] resize-none focus:outline-none scrollbar-thin scrollbar-thumb-[var(--scrollbar-thumb)] scrollbar-track-transparent placeholder:text-[var(--text-tertiary)] ${selectedImage ? 'pt-2' : ''}`}
                   rows={2}
                 />
                 <div className="absolute right-3 bottom-3 flex items-center gap-2">
                   {/* Paperclip Icon (Unused for now) */}
-                  <button className="p-2 hover:bg-white/10 rounded-lg transition-colors text-white/50 cursor-not-allowed">
+                  <button className="p-2 hover:bg-[var(--hover-bg)] rounded-lg transition-colors text-[var(--text-tertiary)] cursor-not-allowed">
                     <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
                     </svg>
@@ -968,7 +971,7 @@ export default function UICodeGenerator({ initialProjects = [], user }) {
                   {/* Image Icon - Triggers File Input */}
                   <button 
                     onClick={() => fileInputRef.current?.click()}
-                    className="p-2 hover:bg-white/10 rounded-lg transition-colors text-white/50 hover:text-white/90"
+                    className="p-2 hover:bg-[var(--hover-bg)] rounded-lg transition-colors text-[var(--text-tertiary)] hover:text-[var(--text-primary)]"
                   >
                     <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
@@ -978,7 +981,7 @@ export default function UICodeGenerator({ initialProjects = [], user }) {
                   <button 
                     onClick={handleSendMessage}
                     disabled={!inputValue.trim() && !selectedImage} // Enable if text OR image
-                    className="px-4 py-2 bg-linear-to-r from-indigo-500 to-indigo-600 hover:from-indigo-600 hover:to-indigo-700 rounded-xl font-semibold text-sm transition-all duration-300 hover:shadow-lg hover:shadow-indigo-500/50 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:shadow-none flex items-center gap-2"
+                    className="px-4 py-2 bg-linear-to-r from-indigo-500 to-indigo-600 hover:from-indigo-600 hover:to-indigo-700 rounded-xl font-semibold text-sm text-white transition-all duration-300 hover:shadow-lg hover:shadow-indigo-500/50 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:shadow-none flex items-center gap-2"
                   >
                     <span>Send</span>
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -993,17 +996,17 @@ export default function UICodeGenerator({ initialProjects = [], user }) {
 
         {/* RIGHT SIDEBAR - Code Versions */}
         <div className={`transition-all duration-300 ease-out ${rightSidebarOpen ? 'w-96' : 'w-16'} relative shrink-0`}>
-          <div className="h-full bg-white/5 backdrop-blur-xl border-l border-white/10 flex flex-col">
+          <div className="h-full bg-[var(--sidebar-bg)] backdrop-blur-xl border-l border-[var(--border-color)] flex flex-col transition-colors duration-200">
             {/* Header / Toggle */}
             {rightSidebarOpen ? (
-              <div className="p-4 border-b border-white/10 bg-linear-to-l from-indigo-500/10 to-pink-500/10 flex items-center justify-between">
+              <div className="p-4 border-b border-[var(--border-color)] bg-gradient-to-l from-indigo-500/10 to-pink-500/10 flex items-center justify-between">
                 <div>
                   <h3 className="font-syne font-bold text-lg mb-1">Versions</h3>
-                  <p className="text-xs text-white/50">Code history & variants</p>
+                  <p className="text-xs text-[var(--text-secondary)]">Code history & variants</p>
                 </div>
                 <button
                   onClick={() => setRightSidebarOpen(false)}
-                  className="p-2 hover:bg-white/10 rounded-lg transition-colors"
+                  className="p-2 hover:bg-[var(--hover-bg)] rounded-lg transition-colors"
                 >
                   <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
@@ -1011,10 +1014,10 @@ export default function UICodeGenerator({ initialProjects = [], user }) {
                 </button>
               </div>
             ) : (
-              <div className="p-3 border-b border-white/10 flex items-center justify-center">
+              <div className="p-3 border-b border-[var(--border-color)] flex items-center justify-center">
                 <button
                   onClick={() => setRightSidebarOpen(true)}
-                  className="p-2 hover:bg-white/10 rounded-lg transition-colors"
+                  className="p-2 hover:bg-[var(--hover-bg)] rounded-lg transition-colors"
                 >
                   <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
@@ -1025,13 +1028,13 @@ export default function UICodeGenerator({ initialProjects = [], user }) {
 
             {/* Versions List */}
             {rightSidebarOpen && (
-            <div className="flex-1 overflow-y-auto scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent">
+            <div className="flex-1 overflow-y-auto scrollbar-thin scrollbar-thumb-[var(--scrollbar-thumb)] scrollbar-track-transparent">
               <div className="p-3 space-y-4">
                 {currentProject?.components.map((component, compIdx) => (
                   <div key={component.id} className="animate-slide-in-right" style={{ animationDelay: `${compIdx * 50}ms` }}>
                     <button 
                       onClick={(e) => toggleFileCollapse(component.id, e)}
-                      className="w-full flex items-center gap-2 mb-2 px-2 py-1.5 rounded-lg hover:bg-white/5 transition-colors"
+                      className="w-full flex items-center gap-2 mb-2 px-2 py-1.5 rounded-lg hover:bg-[var(--hover-bg)] transition-colors"
                     >
                       <button className="p-0.5 shrink-0">
                         <svg 
@@ -1048,8 +1051,8 @@ export default function UICodeGenerator({ initialProjects = [], user }) {
                       <svg className="w-4 h-4 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
                       </svg>
-                      <span className="font-semibold text-sm text-white/90">{component.name}</span>
-                      <span className="ml-auto text-xs text-white/30">{component.versions.length}</span>
+                      <span className="font-semibold text-sm text-[var(--text-primary)]">{component.name}</span>
+                      <span className="ml-auto text-xs text-[var(--text-tertiary)]">{component.versions.length}</span>
                     </button>
                     
                     {!collapsedFiles.has(component.id) && (
@@ -1060,24 +1063,24 @@ export default function UICodeGenerator({ initialProjects = [], user }) {
                           onClick={() => setActiveVersion(version.id)}
                           className={`w-full text-left p-3 rounded-xl transition-all duration-300 group ${
                             activeVersion === version.id 
-                              ? 'bg-linear-to-r from-indigo-500/20 to-pink-500/20 border border-indigo-500/50 shadow-lg shadow-indigo-500/20' 
-                              : 'bg-white/5 border border-transparent hover:bg-white/8 hover:border-white/10'
+                              ? 'bg-gradient-to-r from-indigo-500/20 to-pink-500/20 border border-indigo-500/50 shadow-lg shadow-indigo-500/20' 
+                              : 'bg-[var(--card-bg)] border border-transparent hover:bg-[var(--hover-bg)] hover:border-[var(--border-color)]'
                           }`}
                           style={{ animationDelay: `${(compIdx * 50) + (verIdx * 30)}ms` }}
                         >
                           <div className="flex items-center justify-between mb-1.5">
-                            <span className={`text-sm font-medium ${activeVersion === version.id ? 'text-white' : 'text-white/80'}`}>
+                            <span className={`text-sm font-medium ${activeVersion === version.id ? 'text-[var(--text-primary)]' : 'text-[var(--text-secondary)]'}`}>
                               {version.name}
                             </span>
                             <span className={`text-xs px-2 py-0.5 rounded-full ${
                               activeVersion === version.id 
                                 ? 'bg-indigo-500/30 text-indigo-200' 
-                                : 'bg-white/10 text-white/40'
+                                : 'bg-[var(--hover-bg)] text-[var(--text-tertiary)]'
                             }`}>
                               v{verIdx + 1}
                             </span>
                           </div>
-                          <div className="flex items-center gap-2 text-xs text-white/40">
+                          <div className="flex items-center gap-2 text-xs text-[var(--text-tertiary)]">
                             <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
                             </svg>
@@ -1099,9 +1102,9 @@ export default function UICodeGenerator({ initialProjects = [], user }) {
       {/* Code Preview Modal - Shows when a version is selected */}
       {activeVersion && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-6 animate-fade-in">
-          <div className="w-full max-w-7xl h-[90vh] bg-white/10 backdrop-blur-2xl border border-white/20 rounded-3xl overflow-hidden shadow-2xl animate-scale-in">
+          <div className="w-full max-w-7xl h-[90vh] bg-[var(--modal-bg)] backdrop-blur-2xl border border-[var(--border-color)] rounded-3xl overflow-hidden shadow-2xl animate-scale-in">
             {/* Modal Header */}
-            <div className="h-16 bg-white/5 border-b border-white/10 flex items-center justify-between px-6">
+            <div className="h-16 bg-[var(--hover-bg)] border-b border-[var(--border-color)] flex items-center justify-between px-6">
               <div className="flex items-center gap-4">
                 <h3 className="font-syne font-bold text-xl">
                   {activeVersionData?.name}
@@ -1111,8 +1114,8 @@ export default function UICodeGenerator({ initialProjects = [], user }) {
                     onClick={() => setViewMode('code')}
                     className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all duration-300 ${
                       viewMode === 'code' 
-                        ? 'bg-indigo-500/30 text-white border border-indigo-500/50' 
-                        : 'bg-white/5 text-white/60 hover:bg-white/10 border border-transparent'
+                        ? 'bg-indigo-500/30 text-[var(--text-primary)] border border-indigo-500/50' 
+                        : 'bg-[var(--card-bg)] text-[var(--text-secondary)] hover:bg-[var(--hover-bg)] border border-transparent'
                     }`}
                   >
                     Code
@@ -1121,8 +1124,8 @@ export default function UICodeGenerator({ initialProjects = [], user }) {
                     onClick={() => setViewMode('preview')}
                     className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all duration-300 ${
                       viewMode === 'preview' 
-                        ? 'bg-indigo-500/30 text-white border border-indigo-500/50' 
-                        : 'bg-white/5 text-white/60 hover:bg-white/10 border border-transparent'
+                        ? 'bg-indigo-500/30 text-[var(--text-primary)] border border-indigo-500/50' 
+                        : 'bg-[var(--card-bg)] text-[var(--text-secondary)] hover:bg-[var(--hover-bg)] border border-transparent'
                     }`}
                   >
                     Preview
@@ -1131,8 +1134,8 @@ export default function UICodeGenerator({ initialProjects = [], user }) {
                     onClick={() => setViewMode('split')}
                     className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all duration-300 ${
                       viewMode === 'split' 
-                        ? 'bg-indigo-500/30 text-white border border-indigo-500/50' 
-                        : 'bg-white/5 text-white/60 hover:bg-white/10 border border-transparent'
+                        ? 'bg-indigo-500/30 text-[var(--text-primary)] border border-indigo-500/50' 
+                        : 'bg-[var(--card-bg)] text-[var(--text-secondary)] hover:bg-[var(--hover-bg)] border border-transparent'
                     }`}
                   >
                     Split
@@ -1143,7 +1146,7 @@ export default function UICodeGenerator({ initialProjects = [], user }) {
               <div className="flex items-center gap-2">
                 <button 
                   onClick={handleExportZip}
-                  className="px-4 py-2 rounded-lg text-sm transition-all duration-300 border flex items-center gap-2 bg-white/5 hover:bg-white/10 text-white border-white/10 hover:border-white/20"
+                  className="px-4 py-2 rounded-lg text-sm transition-all duration-300 border flex items-center gap-2 bg-[var(--card-bg)] hover:bg-[var(--hover-bg)] text-[var(--text-primary)] border-[var(--border-color)] hover:border-[var(--border-hover)]"
                 >
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
@@ -1155,7 +1158,7 @@ export default function UICodeGenerator({ initialProjects = [], user }) {
                   className={`px-4 py-2 rounded-lg text-sm transition-all duration-300 border flex items-center gap-2 ${
                     isCopied 
                       ? 'bg-green-500/20 text-green-400 border-green-500/30' 
-                      : 'bg-white/5 hover:bg-white/10 text-white border-white/10 hover:border-white/20'
+                      : 'bg-[var(--card-bg)] hover:bg-[var(--hover-bg)] text-[var(--text-primary)] border-[var(--border-color)] hover:border-[var(--border-hover)]'
                   }`}
                 >
                   {isCopied ? (
@@ -1176,7 +1179,7 @@ export default function UICodeGenerator({ initialProjects = [], user }) {
                 </button>
                 <button 
                   onClick={() => setActiveVersion(null)}
-                  className="w-9 h-9 bg-white/5 hover:bg-white/10 rounded-lg transition-all duration-300 border border-white/10 hover:border-white/20 flex items-center justify-center"
+                  className="w-9 h-9 bg-[var(--card-bg)] hover:bg-[var(--hover-bg)] rounded-lg transition-all duration-300 border border-[var(--border-color)] hover:border-[var(--border-hover)] flex items-center justify-center"
                 >
                   <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -1189,7 +1192,7 @@ export default function UICodeGenerator({ initialProjects = [], user }) {
             <div className="h-[calc(100%-4rem)] flex">
               {/* Code Panel */}
               {(viewMode === 'code' || viewMode === 'split') && (
-                <div className={`${viewMode === 'split' ? 'w-1/2' : 'w-full'} border-r border-white/10 flex flex-col bg-[#1a1a2e]`}>
+                <div className={`${viewMode === 'split' ? 'w-1/2' : 'w-full'} border-r border-[var(--border-color)] flex flex-col bg-[var(--surface-secondary)]`}>
                   <div className="h-12 bg-white/5 border-b border-white/10 flex items-center justify-between px-4">
                     <div className="flex items-center gap-2">
                       <div className="w-3 h-3 rounded-full bg-red-500/80" />
@@ -1230,31 +1233,31 @@ export default function UICodeGenerator({ initialProjects = [], user }) {
       {/* Create Project Modal */}
       {showCreateModal && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-fade-in">
-          <div className="bg-[#1a1a2e] border border-white/10 rounded-2xl p-6 w-full max-w-md shadow-2xl animate-scale-in relative">
+          <div className="bg-[var(--modal-bg)] border border-[var(--border-color)] rounded-2xl p-6 w-full max-w-md shadow-2xl animate-scale-in relative">
             
             {/* Close Button */}
             <button 
               onClick={() => setShowCreateModal(false)}
-              className="absolute top-4 right-4 text-white/40 hover:text-white transition-colors"
+              className="absolute top-4 right-4 text-[var(--text-tertiary)] hover:text-[var(--text-primary)] transition-colors"
             >
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
               </svg>
             </button>
 
-            <h3 className="font-syne font-bold text-xl text-white mb-1">New Project</h3>
-            <p className="text-sm text-white/50 mb-6">Give your new idea a name</p>
+            <h3 className="font-syne font-bold text-xl text-[var(--text-primary)] mb-1">New Project</h3>
+            <p className="text-sm text-[var(--text-secondary)] mb-6">Give your new idea a name</p>
 
             <form onSubmit={confirmCreateProject}>
               <div className="mb-6">
-                <label className="block text-xs font-medium text-white/60 mb-2 uppercase tracking-wider">Project Name</label>
+                <label className="block text-xs font-medium text-[var(--text-secondary)] mb-2 uppercase tracking-wider">Project Name</label>
                 <input
                   type="text"
                   autoFocus
                   value={newProjectName}
                   onChange={(e) => setNewProjectName(e.target.value)}
                   placeholder="e.g., Crypto Dashboard"
-                  className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white placeholder:text-white/20 focus:outline-none focus:border-indigo-500/50 focus:bg-white/10 transition-all"
+                  className="w-full bg-[var(--input-bg)] border border-[var(--input-border)] rounded-xl px-4 py-3 text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-indigo-500/50 transition-all"
                 />
               </div>
 
@@ -1262,7 +1265,7 @@ export default function UICodeGenerator({ initialProjects = [], user }) {
                 <button
                   type="button"
                   onClick={() => setShowCreateModal(false)}
-                  className="flex-1 px-4 py-2.5 bg-white/5 hover:bg-white/10 text-white/70 hover:text-white rounded-xl font-medium transition-all"
+                  className="flex-1 px-4 py-2.5 bg-[var(--button-secondary-bg)] hover:bg-[var(--button-secondary-hover)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] rounded-xl font-medium transition-all"
                 >
                   Cancel
                 </button>
@@ -1278,6 +1281,12 @@ export default function UICodeGenerator({ initialProjects = [], user }) {
           </div>
         </div>
       )}
+
+      {/* Personalization Modal */}
+      <PersonalizationModal 
+        isOpen={showPersonalizationModal} 
+        onClose={() => setShowPersonalizationModal(false)} 
+      />
     </div>
     
   );
