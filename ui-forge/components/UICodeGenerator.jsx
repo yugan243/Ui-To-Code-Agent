@@ -56,8 +56,6 @@ export default function UICodeGenerator({ initialProjects = [], user }) {
   const [collapsedFiles, setCollapsedFiles] = useState(new Set()); // Track collapsed file groups
   const [showProfileMenu, setShowProfileMenu] = useState(false); // Track profile menu visibility
   const [searchQuery, setSearchQuery] = useState(''); // Search projects
-  const [typingText, setTypingText] = useState(''); // For typing animation
-  const [isTyping, setIsTyping] = useState(false); // Typing state
   const [showPersonalizationModal, setShowPersonalizationModal] = useState(false); // Personalization modal
   
   // Auto-logout after 5 minutes of inactivity
@@ -909,7 +907,7 @@ export default function UICodeGenerator({ initialProjects = [], user }) {
                   Hi {user?.name?.split(' ')[0] || 'there'}! 👋
                 </h2>
                 <p className="text-[var(--text-secondary)] text-lg">
-                  Let's turn your UI designs into beautiful code
+                  Let&apos;s turn your UI designs into beautiful code
                 </p>
               </div>
             )}

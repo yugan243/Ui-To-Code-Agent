@@ -15,7 +15,8 @@ export default function PersonalizationModal({ isOpen, onClose }: Personalizatio
   // Sync with actual theme when modal opens
   useEffect(() => {
     if (isOpen) {
-      setSelectedTheme(theme);
+      // Use queueMicrotask to avoid synchronous setState in effect
+      queueMicrotask(() => setSelectedTheme(theme));
     }
   }, [isOpen, theme]);
 

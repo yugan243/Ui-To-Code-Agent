@@ -537,7 +537,7 @@ export default function LoginPage({ onLoginSuccess }) {
 
             {/* Sign Up Link */}
             <div className="text-center mt-8 text-sm text-white/60 relative z-10">
-              Don't have an account?{' '}
+              Don&apos;t have an account?{' '}
               <a href="#" className="text-indigo-400 hover:text-pink-400 font-semibold transition-colors relative group/signup">
                 Sign up
                 <span className="absolute -bottom-0.5 left-0 w-0 h-0.5 bg-linear-to-r from-indigo-400 to-pink-400 group-hover/signup:w-full transition-all duration-300" />
@@ -640,9 +640,9 @@ export default function LoginPage({ onLoginSuccess }) {
 
           {/* Testimonial */}
           <div className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-3xl p-6 relative overflow-hidden animate-slide-in-right" style={{ animationDelay: '300ms' }}>
-            <div className="absolute top-0 right-0 text-6xl text-indigo-500/10 font-serif leading-none">"</div>
+            <div className="absolute top-0 right-0 text-6xl text-indigo-500/10 font-serif leading-none">&quot;</div>
             <p className="text-white/70 text-sm leading-relaxed mb-4 relative z-10">
-              "This tool cut our development time by 70%. It's like having a senior developer on standby 24/7."
+              &quot;This tool cut our development time by 70%. It&apos;s like having a senior developer on standby 24/7.&quot;
             </p>
             <div className="flex items-center gap-3 relative z-10">
               <div className="w-10 h-10 rounded-full bg-linear-to-br from-indigo-500 to-pink-500" />
