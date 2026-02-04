@@ -36,7 +36,13 @@ export default function UICodeGenerator({ initialProjects = [], user }) {
   // ALL hooks must be called before any conditional returns
   const [leftSidebarOpen, setLeftSidebarOpen] = useState(true);
   const [rightSidebarOpen, setRightSidebarOpen] = useState(true);
-  const [activeProject, setActiveProject] = useState(initialProjects.length > 0 ? initialProjects[0].id : null);
+  const [activeProject, setActiveProject] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('activeProject');
+      return saved || null;
+    }
+    return null;
+  });
   const [activeVersion, setActiveVersion] = useState(null);
   const [viewMode, setViewMode] = useState('split'); // 'code', 'preview', 'split'
   const [messages, setMessages] = useState([
@@ -99,6 +105,15 @@ export default function UICodeGenerator({ initialProjects = [], user }) {
     };
   }, []);
 
+  // Save active project to localStorage
+  useEffect(() => {
+    if (activeProject) {
+      localStorage.setItem('activeProject', activeProject);
+    } else {
+      localStorage.removeItem('activeProject');
+    }
+  }, [activeProject]);
+
   // Load chat history when switching projects
   useEffect(() => {
     async function loadChat() {
@@ -130,6 +145,8 @@ export default function UICodeGenerator({ initialProjects = [], user }) {
   
   const handleLogout = async () => {
     try {
+      // Clear localStorage before logout
+      localStorage.removeItem('activeProject');
       await signOut({ callbackUrl: '/login', redirect: true });
     } catch (error) {
       console.error('Logout error:', error);
@@ -575,7 +592,7 @@ export default function UICodeGenerator({ initialProjects = [], user }) {
             </div>
 
             {/* User Profile Section - Bottom */}
-            <div className="p-3 border-t border-white/10 relative">
+            <div className="p-3 border-t border-white/10 relative z-50">
               <button
                 onClick={() => setShowProfileMenu(!showProfileMenu)}
                 className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-white/5 transition-all duration-300 group"
@@ -674,7 +691,7 @@ export default function UICodeGenerator({ initialProjects = [], user }) {
         </div>
 
         {/* CENTER - Chat Interface */}
-        <div className="flex-1 flex flex-col min-w-0">
+        <div className="flex-1 flex flex-col min-w-0 relative">
           {/* Top Bar */}
           <div className="h-16 bg-white/5 backdrop-blur-xl border-b border-white/10 flex items-center justify-between px-6">
             <div className="flex items-center gap-4">
@@ -694,7 +711,8 @@ export default function UICodeGenerator({ initialProjects = [], user }) {
           </div>
 
           {/* Messages Area */}
-          <div className="flex-1 overflow-y-auto px-6 py-6 space-y-4 scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent">
+          <div className="flex-1 overflow-y-auto px-6 py-6 pb-40 scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent">
+            <div className="max-w-4xl mx-auto space-y-4">
             {messages.map((message, idx) => (
               <div 
                 key={message.id}
@@ -727,11 +745,28 @@ export default function UICodeGenerator({ initialProjects = [], user }) {
             ))}
             {/* Invisible scroll target */}
             <div ref={messagesEndRef} />
+            </div>
           </div>
 
-          {/* Input Area */}
-          <div className="p-4 bg-white/5 backdrop-blur-xl border-t border-white/10">
-            <div className="max-w-4xl mx-auto relative">
+          {/* Floating Input Area with Smooth Transition */}
+          <div className={`absolute inset-x-0 transition-all duration-700 ease-out ${
+            !activeProject && messages.length <= 1 
+              ? 'top-1/2 -translate-y-1/2' 
+              : 'bottom-0'
+          }`}>
+            {/* Welcome Message - Only shown when centered */}
+            {!activeProject && messages.length <= 1 && (
+              <div className="text-center mb-8 animate-fade-in">
+                <h2 className="font-syne font-bold text-4xl mb-3 bg-linear-to-r from-white via-indigo-200 to-pink-200 bg-clip-text text-transparent">
+                  Hi {user?.name?.split(' ')[0] || 'there'}! 👋
+                </h2>
+                <p className="text-white/50 text-lg">
+                  Let's turn your UI designs into beautiful code
+                </p>
+              </div>
+            )}
+
+            <div className="max-w-4xl mx-auto px-6 relative">
               
               {/* --- IMAGE PREVIEW (Before Sending) --- */}
               {selectedImage && (
@@ -772,7 +807,7 @@ export default function UICodeGenerator({ initialProjects = [], user }) {
                     }
                   }}
                   placeholder="Describe your UI or paste a screenshot..." // Update placeholder
-                  className="w-full bg-white/5 border border-white/10 rounded-2xl px-5 py-4 pr-32 text-sm resize-none focus:outline-none focus:border-indigo-500/50 focus:bg-white/8 transition-all duration-300 scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent placeholder:text-white/30"
+                  className="w-full bg-[#1a1a2e]/95 border border-white/10 rounded-2xl px-5 py-4 pr-32 text-sm resize-none focus:outline-none focus:border-indigo-500/50 focus:bg-[#1a1a2e] focus:ring-4 focus:ring-indigo-500/10 transition-all duration-300 scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent placeholder:text-white/30 shadow-2xl"
                   rows={3}
                 />
                 <div className="absolute right-3 bottom-3 flex items-center gap-2">
