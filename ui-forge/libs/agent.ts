@@ -10,7 +10,7 @@ const getClient = () => {
 };
 
 // Use the 72B model if you have Pro, otherwise stick to 7B or 72B-Int4
-const MODEL_ID = "Qwen/Qwen3-VL-30B-A3B-Thinking"; 
+const MODEL_ID = "Qwen/Qwen2.5-VL-7B-Instruct"; 
 
 // --- 2. STATE ---
 const AgentState = Annotation.Root({

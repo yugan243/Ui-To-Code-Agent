@@ -1,6 +1,6 @@
 'use client';
 
-import { createNewProject, getProjectChatHistory, saveUserMessage, createUIFile } from '@/app/actions/project-actions'; 
+import { createNewProject, getProjectChatHistory, saveUserMessage, createUIFile, getProjectById } from '@/app/actions/project-actions'; 
 import { uploadImage } from '@/app/actions/upload';
 import { useState, useEffect, useRef } from 'react';
 import { signOut } from 'next-auth/react';
@@ -389,24 +389,14 @@ export default function UICodeGenerator({ initialProjects = [], user }) {
             : msg
         ));
 
-        // Update Versions List
-        setProjects(prevProjects => prevProjects.map(proj => {
-          if (proj.id !== activeProject) return proj;
-          
-          const updatedProj = { ...proj };
-          const compIndex = updatedProj.components.findIndex(c => c.id === currentFileId);
-          
-          if (compIndex > -1) {
-             const newVersion = {
-                id: result.versionId,
-                name: `v${updatedProj.components[compIndex].versions.length + 1}`,
-                timestamp: new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}),
-                code: result.code
-             };
-             updatedProj.components[compIndex].versions.unshift(newVersion);
-          }
-          return updatedProj;
-        }));
+        // Reload the project data from the database to get the new version
+        const updatedProject = await getProjectById(activeProject);
+        if (updatedProject) {
+          const updatedProjectUI = transformToUI([updatedProject])[0];
+          setProjects(prevProjects => prevProjects.map(proj => 
+            proj.id === activeProject ? updatedProjectUI : proj
+          ));
+        }
 
         setActiveVersion(result.versionId);
         setViewMode('preview');

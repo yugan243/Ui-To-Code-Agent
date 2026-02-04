@@ -70,6 +70,37 @@ export async function getUserProjects() {
   return projects;
 }
 
+// Get a single project by ID with all nested data
+export async function getProjectById(projectId: string) {
+  const session = await auth();
+  
+  if (!session?.user?.id) {
+    return null;
+  }
+
+  const project = await prisma.project.findFirst({
+    where: {
+      id: projectId,
+      userId: session.user.id // Security check
+    },
+    include: {
+      sessions: {
+        include: {
+          files: {
+            include: {
+              versions: {
+                orderBy: { createdAt: 'desc' }
+              }
+            }
+          }
+        }
+      }
+    }
+  });
+
+  return project;
+}
+
 // 3. Fetch Chat History for a Project
 export async function getProjectChatHistory(projectId: string) {
   const session = await auth();
