@@ -70,6 +70,37 @@ export async function getUserProjects() {
   return projects;
 }
 
+// Get a single project by ID with all nested data
+export async function getProjectById(projectId: string) {
+  const session = await auth();
+  
+  if (!session?.user?.id) {
+    return null;
+  }
+
+  const project = await prisma.project.findFirst({
+    where: {
+      id: projectId,
+      userId: session.user.id // Security check
+    },
+    include: {
+      sessions: {
+        include: {
+          files: {
+            include: {
+              versions: {
+                orderBy: { createdAt: 'desc' }
+              }
+            }
+          }
+        }
+      }
+    }
+  });
+
+  return project;
+}
+
 // 3. Fetch Chat History for a Project
 export async function getProjectChatHistory(projectId: string) {
   const session = await auth();
@@ -93,9 +124,11 @@ export async function getProjectChatHistory(projectId: string) {
 
   // Normalize role to lowercase for UI consistency
   // Database stores as 'USER'/'ASSISTANT' but UI expects 'user'/'assistant'
+  // Also map imageUrl to image for UI compatibility
   return chatSession.messages.map(msg => ({
     ...msg,
-    role: msg.role.toLowerCase()
+    role: msg.role.toLowerCase(),
+    image: msg.imageUrl // Map imageUrl to image for the UI
   }));
 }
 
