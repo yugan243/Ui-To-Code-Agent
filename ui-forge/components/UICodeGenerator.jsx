@@ -35,7 +35,7 @@ const transformToUI = (dbProjects) => {
 export default function UICodeGenerator({ initialProjects = [], user }) {
   // ALL hooks must be called before any conditional returns
   const [leftSidebarOpen, setLeftSidebarOpen] = useState(true);
-  const [rightSidebarOpen, setRightSidebarOpen] = useState(true);
+  const [rightSidebarOpen, setRightSidebarOpen] = useState(false);
   const [activeProject, setActiveProject] = useState(() => {
     if (typeof window !== 'undefined') {
       const saved = localStorage.getItem('activeProject');

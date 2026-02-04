@@ -14,6 +14,8 @@ export default function LoginPage({ onLoginSuccess }) {
   const [activeFeature, setActiveFeature] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
+  const [codeAnimationPhase, setCodeAnimationPhase] = useState('typing'); // 'typing', 'preview'
+  const [typedCode, setTypedCode] = useState('');
   const [formData, setFormData] = useState({
     email: '',
     password: '',
@@ -55,6 +57,50 @@ export default function LoginPage({ onLoginSuccess }) {
     }, 4000);
     return () => clearInterval(interval);
   }, [features.length]);
+
+  // Code typing animation
+  useEffect(() => {
+    const codeSnippet = `<div className="card">
+  <div className="header">
+    <h2>UI Component</h2>
+  </div>
+  <div className="content">
+    <p>Beautiful Design</p>
+  </div>
+</div>`;
+
+    let currentIndex = 0;
+    let typingInterval;
+
+    const startTyping = () => {
+      setCodeAnimationPhase('typing');
+      setTypedCode('');
+      currentIndex = 0;
+
+      typingInterval = setInterval(() => {
+        if (currentIndex < codeSnippet.length) {
+          setTypedCode(codeSnippet.slice(0, currentIndex + 1));
+          currentIndex++;
+        } else {
+          clearInterval(typingInterval);
+          // Wait a moment, then show preview
+          setTimeout(() => {
+            setCodeAnimationPhase('preview');
+            // After showing preview, restart the cycle
+            setTimeout(() => {
+              startTyping();
+            }, 4000);
+          }, 800);
+        }
+      }, 30);
+    };
+
+    startTyping();
+
+    return () => {
+      if (typingInterval) clearInterval(typingInterval);
+    };
+  }, []);
 
   // Track mouse position for spotlight effect
   const handleMouseMove = (e) => {
@@ -392,9 +438,18 @@ export default function LoginPage({ onLoginSuccess }) {
                   <button
                     type="button"
                     onClick={togglePassword}
-                    className="absolute right-4 top-1/2 -translate-y-1/2 text-white/50 hover:text-white hover:scale-110 transition-all duration-300 text-lg p-1 z-20"
+                    className="absolute right-4 top-1/2 -translate-y-1/2 hover:scale-110 transition-all duration-300 p-1 z-20"
                   >
-                    {showPassword ? '🙈' : '👁️'}
+                    {showPassword ? (
+                      <svg className="w-5 h-5" fill="none" stroke="#1f2937" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" />
+                      </svg>
+                    ) : (
+                      <svg className="w-5 h-5" fill="none" stroke="#1f2937" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                      </svg>
+                    )}
                   </button>
                   <div className="absolute inset-0 rounded-xl opacity-0 group-focus-within/input:opacity-100 transition-opacity duration-300 -z-10">
                     <div className="absolute inset-0 bg-linear-to-r from-indigo-500/20 to-pink-500/20 blur-xl" />
@@ -514,31 +569,52 @@ export default function LoginPage({ onLoginSuccess }) {
                   </div>
                 </div>
                 
-                {/* Mock Content */}
-                <div className="p-4 space-y-3 bg-linear-to-br from-white/5 to-white/0">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-lg bg-linear-to-br from-indigo-500 to-pink-500 animate-pulse-glow" />
-                    <div className="flex-1 space-y-2">
-                      <div className="h-2 bg-white/20 rounded-full w-3/4" />
-                      <div className="h-2 bg-white/10 rounded-full w-1/2" />
+                {/* Content Area - Animated */}
+                <div className="relative h-48 bg-[#1e1e1e]">
+                  {/* Code Typing View */}
+                  <div className={`absolute inset-0 p-4 font-mono text-xs leading-relaxed transition-all duration-500 ${
+                    codeAnimationPhase === 'typing' 
+                      ? 'opacity-100 scale-100' 
+                      : 'opacity-0 scale-95'
+                  }`}>
+                    <pre className="text-green-400">
+                      {typedCode}
+                      <span className="inline-block w-1.5 h-4 bg-green-400 animate-pulse ml-0.5" />
+                    </pre>
+                  </div>
+
+                  {/* Preview View */}
+                  <div className={`absolute inset-0 p-4 transition-all duration-500 ${
+                    codeAnimationPhase === 'preview' 
+                      ? 'opacity-100 scale-100' 
+                      : 'opacity-0 scale-95'
+                  }`}>
+                    <div className="space-y-3 bg-linear-to-br from-white/5 to-white/0 h-full rounded-lg p-3">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-lg bg-linear-to-br from-indigo-500 to-pink-500 animate-pulse-glow" />
+                        <div className="flex-1 space-y-2">
+                          <div className="h-2 bg-white/20 rounded-full w-3/4 animate-pulse" />
+                          <div className="h-2 bg-white/10 rounded-full w-1/2 animate-pulse" style={{ animationDelay: '0.1s' }} />
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-2 gap-2">
+                        <div className="h-16 bg-white/10 rounded-lg animate-pulse" style={{ animationDelay: '0.2s' }} />
+                        <div className="h-16 bg-white/10 rounded-lg animate-pulse" style={{ animationDelay: '0.3s' }} />
+                      </div>
+                      <div className="h-3 bg-white/10 rounded-full w-full animate-pulse" style={{ animationDelay: '0.4s' }} />
+                      <div className="h-3 bg-white/10 rounded-full w-5/6 animate-pulse" style={{ animationDelay: '0.5s' }} />
                     </div>
                   </div>
-                  <div className="grid grid-cols-2 gap-2">
-                    <div className="h-16 bg-white/10 rounded-lg" />
-                    <div className="h-16 bg-white/10 rounded-lg" />
-                  </div>
-                  <div className="h-3 bg-white/10 rounded-full w-full" />
-                  <div className="h-3 bg-white/10 rounded-full w-5/6" />
                 </div>
               </div>
 
               <p className="text-sm text-white/50 mt-4 text-center">
-                See your designs come to life instantly
+                {codeAnimationPhase === 'typing' ? 'Writing code...' : 'See your designs come to life instantly'}
               </p>
             </div>
           </div>
 
-          {/* Benefits List */}
+          {/* Benefits List
           <div className="space-y-3 animate-slide-in-right" style={{ animationDelay: '200ms' }}>
             {[
               { icon: '🚀', text: 'Deploy-ready code' },
@@ -560,7 +636,7 @@ export default function LoginPage({ onLoginSuccess }) {
                 </svg>
               </div>
             ))}
-          </div>
+          </div> */}
 
           {/* Testimonial */}
           <div className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-3xl p-6 relative overflow-hidden animate-slide-in-right" style={{ animationDelay: '300ms' }}>
@@ -571,7 +647,7 @@ export default function LoginPage({ onLoginSuccess }) {
             <div className="flex items-center gap-3 relative z-10">
               <div className="w-10 h-10 rounded-full bg-linear-to-br from-indigo-500 to-pink-500" />
               <div>
-                <div className="font-semibold text-sm">Sarah Chen</div>
+                <div className="font-semibold text-sm">Yugan Nimsara</div>
                 <div className="text-xs text-white/40">Product Designer</div>
               </div>
             </div>
