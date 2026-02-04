@@ -36,13 +36,8 @@ export default function UICodeGenerator({ initialProjects = [], user }) {
   // ALL hooks must be called before any conditional returns
   const [leftSidebarOpen, setLeftSidebarOpen] = useState(true);
   const [rightSidebarOpen, setRightSidebarOpen] = useState(false);
-  const [activeProject, setActiveProject] = useState(() => {
-    if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem('activeProject');
-      return saved || null;
-    }
-    return null;
-  });
+  const [activeProject, setActiveProject] = useState(null);
+  const [isHydrated, setIsHydrated] = useState(false);
   const [activeVersion, setActiveVersion] = useState(null);
   const [viewMode, setViewMode] = useState('split'); // 'code', 'preview', 'split'
   const [messages, setMessages] = useState([]);
@@ -107,13 +102,29 @@ export default function UICodeGenerator({ initialProjects = [], user }) {
   }, []);
 
   // Save active project to localStorage
+  // Hydration effect - load from localStorage only on client
   useEffect(() => {
+    setIsHydrated(true);
+    const saved = localStorage.getItem('activeProject');
+    if (saved) {
+      // Validate that the project still exists
+      const projectExists = initialProjects?.some(p => p.id === saved);
+      if (projectExists) {
+        setActiveProject(saved);
+      } else {
+        localStorage.removeItem('activeProject');
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!isHydrated) return; // Don't save during hydration
     if (activeProject) {
       localStorage.setItem('activeProject', activeProject);
     } else {
       localStorage.removeItem('activeProject');
     }
-  }, [activeProject]);
+  }, [activeProject, isHydrated]);
 
   // Load chat history when switching projects
   useEffect(() => {
@@ -382,9 +393,9 @@ export default function UICodeGenerator({ initialProjects = [], user }) {
 
       // Progressive status updates with typing effect
       const stages = [
-        { emoji: '🧠', text: 'Extracting design system and planning...', duration: 3000 },
-        { emoji: '👨\u200d💻', text: 'Writing pixel-perfect HTML with Tailwind...', duration: 5000 },
-        { emoji: '🕵️', text: 'Polishing and fixing...', duration: 2000 }
+        { emoji: '🧠', text: 'Extracting design system and planning...', duration: 5000 },
+        { emoji: '👨\u200d💻', text: 'Writing pixel-perfect HTML with Tailwind...', duration: 7000 },
+        { emoji: '🕵️', text: 'Polishing and fixing...', duration: 4000 }
       ];
 
       let currentStage = 0;
@@ -428,11 +439,23 @@ export default function UICodeGenerator({ initialProjects = [], user }) {
       const result = await generationPromise;
 
       if (result.success) {
+        // Show success message, then add AI's conversational reply as a new message
         setMessages(prev => prev.map(msg => 
           msg.id === tempAiId 
             ? { ...msg, content: "✅ Generated! Check the preview.", isGenerating: false } 
             : msg
         ));
+
+        // Add the AI's conversational reply as a separate message
+        if (result.reply) {
+          const replyId = Date.now() + 2;
+          setMessages(prev => [...prev, {
+            id: replyId,
+            role: 'assistant',
+            content: result.reply,
+            isGenerating: false
+          }]);
+        }
 
         // Reload the project data from the database to get the new version
         const updatedProject = await getProjectById(activeProject);

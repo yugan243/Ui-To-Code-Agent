@@ -10,31 +10,34 @@ export async function generateComponent(
   prompt: string, 
   imageUrl?: string,
   currentCode?: string,
-  activeFileId?: string // The file (Screen) the user is working on
+  activeFileId?: string 
 ) {
   const session = await auth();
   if (!session?.user?.id) return { error: "Unauthorized" };
 
-  console.log("🚀 START: generateComponent"); // LOG 1
+  console.log("🚀 START: generateComponent");
 
   try {
     // 1. Run the Agentic Flow
-    console.log("🤖 Agent Invoke Started..."); // LOG 2
+    console.log("🤖 Agent Invoke Started...");
     
+    // 👇 Ensure we pass 'messages: []' to match the state definition
     const result = await agent.invoke({
       userRequest: prompt,
       imageUrl: imageUrl,
       currentCode: currentCode,
-      messages: []
+      messages: [] 
     });
 
-    console.log("✅ Agent Finished. Result:", result ? "Got Data" : "Empty"); // LOG 3
+    console.log("✅ Agent Finished. Reply:", result.reply); 
 
     if (!result || !result.finalCode) {
         throw new Error("Agent returned no code.");
     }
 
     const generatedCode = result.finalCode;
+    // 👇 Get the conversational reply (fallback if empty)
+    const assistantReply = result.reply || "I've generated the code based on your request. Check the preview!";
 
     // 2. Find/Create the active Session
     const chatSession = await prisma.chatSession.findFirst({
@@ -44,7 +47,6 @@ export async function generateComponent(
 
     if (!chatSession) throw new Error("Session not found");
 
-    // Use the active file if provided, otherwise fall back to first file or create one
     let fileId = activeFileId || chatSession.files[0]?.id;
 
     if (!fileId) {
@@ -63,25 +65,24 @@ export async function generateComponent(
         fileId: fileId,
         code: generatedCode,
         versionNumber: (await prisma.codeVersion.count({ where: { fileId } })) + 1,
-        description: "AI Generated"
+        description: prompt.slice(0, 50) 
       }
     });
 
-    // 4. Save Assistant Message
+    // 4. Save Assistant Message (THE DYNAMIC REPLY)
     await prisma.chatMessage.create({
       data: {
         sessionId: chatSession.id,
         role: "ASSISTANT",
-        content: "I've generated the code based on your request. Check the version history!",
+        content: assistantReply, // 👈 Using the AI's actual words
       }
     });
 
     revalidatePath(`/`);
-    return { success: true, code: generatedCode, versionId: version.id };
+    return { success: true, code: generatedCode, versionId: version.id, reply: assistantReply };
 
   } catch (error: any) {
-    console.error("❌ GENERATION FAILED:", error); // LOG ERROR
-    // Return the actual error message so we can see it in the UI alert if needed
+    console.error("❌ GENERATION FAILED:", error);
     return { success: false, error: error.message || "Failed to generate code" };
   }
 }

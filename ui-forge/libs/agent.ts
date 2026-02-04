@@ -20,6 +20,7 @@ const AgentState = Annotation.Root({
   currentCode: Annotation<string | undefined>({ reducer: (x, y) => y ?? x, default: () => undefined }),
   plan: Annotation<string>({ reducer: (x, y) => y ?? x, default: () => "" }),
   finalCode: Annotation<string>({ reducer: (x, y) => y ?? x, default: () => "" }),
+  reply: Annotation<string>({ reducer: (x, y) => y ?? x, default: () => "" }),
 });
 
 // --- 3. PLANNER NODE (The "Eye") ---
@@ -56,7 +57,7 @@ async function plannerNode(state: typeof AgentState.State) {
   const response = await client.chatCompletion({
     model: MODEL_ID,
     messages: messages,
-    max_tokens: 2048, // Enough for a detailed plan
+    max_tokens: 8192, // Enough for a detailed plan
     temperature: 0.2, // Slightly creative to infer missing details
   });
 
@@ -163,14 +164,51 @@ async function reviewerNode(state: typeof AgentState.State) {
   return { finalCode: fixedCode };
 }
 
+// --- 6. NEW: RESPONDER NODE (The "Voice") ---
+async function responderNode(state: typeof AgentState.State) {
+  const { userRequest, plan } = state;
+  const client = getClient();
+
+  console.log("💬 RESPONDER: Generating conversational reply...");
+
+  const systemPrompt = `You are a helpful AI coding assistant named "UI Forge".
+  The user asked: "${userRequest}".
+  You have just executed this plan: 
+  ${plan.slice(0, 500)}...
+
+  TASK:
+  Write a short, friendly, professional 1-sentence response to the user confirming the changes.
+  
+  Examples:
+  - "I've implemented the dashboard layout with the dark mode colors you requested."
+  - "I've fixed the alignment issues in the navbar."
+  
+  OUTPUT:
+  Return ONLY the message string.`;
+
+  const response = await client.chatCompletion({
+    model: MODEL_ID,
+    messages: [
+      { role: "system", content: systemPrompt },
+      { role: "user", content: "Write the reply." }
+    ],
+    max_tokens: 200,
+    temperature: 0.7, // Higher temp for more natural conversation
+  });
+
+  return { reply: response.choices[0].message.content || "Code generated successfully." };
+}
+
 // --- 6. BUILD GRAPH ---
 const workflow = new StateGraph(AgentState)
   .addNode("planner", plannerNode)
   .addNode("coder", coderNode)
   .addNode("reviewer", reviewerNode)
+  .addNode("responder", responderNode)
   .addEdge("__start__", "planner")
   .addEdge("planner", "coder")
   .addEdge("coder", "reviewer")
-  .addEdge("reviewer", END);
+  .addEdge("reviewer", "responder")   
+  .addEdge("responder", END);
 
 export const agent = workflow.compile();
