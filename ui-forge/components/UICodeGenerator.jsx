@@ -58,6 +58,7 @@ export default function UICodeGenerator({ initialProjects = [], user }) {
   const [collapsedProjects, setCollapsedProjects] = useState(new Set()); // Track collapsed projects
   const [collapsedFiles, setCollapsedFiles] = useState(new Set()); // Track collapsed file groups
   const [showProfileMenu, setShowProfileMenu] = useState(false); // Track profile menu visibility
+  const [searchQuery, setSearchQuery] = useState(''); // Search projects
   
   // Auto-logout after 5 minutes of inactivity
   useEffect(() => {
@@ -481,35 +482,120 @@ export default function UICodeGenerator({ initialProjects = [], user }) {
       <div className="h-full flex relative z-10">
         
         {/* LEFT SIDEBAR - Projects & Chats */}
-        <div className={`transition-all duration-300 ease-out ${leftSidebarOpen ? 'w-80' : 'w-0'} relative`}>
-          <div className={`h-full bg-white/5 backdrop-blur-xl border-r border-white/10 flex flex-col overflow-hidden ${!leftSidebarOpen && 'invisible'}`}>
-            {/* Header */}
-            <div className="p-4 border-b border-white/10 bg-linear-to-r from-indigo-500/10 to-pink-500/10">
-              <div className="flex items-center justify-between mb-4">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-linear-to-br from-indigo-500 to-pink-500 flex items-center justify-center font-syne font-bold text-lg shadow-lg shadow-indigo-500/50 animate-pulse-glow">
-                    N
+        <div className={`transition-all duration-300 ease-out ${leftSidebarOpen ? 'w-80' : 'w-16'} relative shrink-0`}>
+          <div className="h-full bg-white/5 backdrop-blur-xl border-r border-white/10 flex flex-col">
+            
+            {/* Header - Logo and Toggle */}
+            <div className={`p-3 border-b border-white/10 flex items-center ${leftSidebarOpen ? 'justify-between' : 'justify-center'}`}>
+              {leftSidebarOpen ? (
+                <>
+                  {/* Expanded: Logo on left */}
+                  <div className="flex items-center gap-2">
+                    <div className="w-8 h-8 rounded-lg bg-linear-to-br from-indigo-500 to-pink-500 flex items-center justify-center font-syne font-bold shadow-lg shadow-indigo-500/50">
+                      N
+                    </div>
+                    <div>
+                      <h1 className="font-syne font-bold text-sm">UI Forge</h1>
+                      <p className="text-[10px] text-white/50">Design to Code</p>
+                    </div>
                   </div>
-                  <div>
-                    <h1 className="font-syne font-bold text-lg">UI Forge</h1>
-                    <p className="text-xs text-white/50">Design to Code</p>
+                  {/* Toggle button on right */}
+                  <button
+                    onClick={() => setLeftSidebarOpen(false)}
+                    className="p-2 hover:bg-white/10 rounded-lg transition-colors group"
+                    title="Close sidebar"
+                  >
+                    <svg className="w-5 h-5 text-white/60 group-hover:text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+                    </svg>
+                  </button>
+                </>
+              ) : (
+                /* Collapsed: Just logo icon with hover tooltip */
+                <button
+                  onClick={() => setLeftSidebarOpen(true)}
+                  className="w-10 h-10 rounded-lg bg-linear-to-br from-indigo-500 to-pink-500 flex items-center justify-center font-syne font-bold shadow-lg shadow-indigo-500/50 hover:scale-110 transition-transform group relative"
+                  title="Open sidebar"
+                >
+                  N
+                  <div className="absolute left-full ml-2 px-2 py-1 bg-black/90 text-white text-xs rounded whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
+                    Open sidebar
                   </div>
-                </div>
-              </div>
-              
-              <button 
-                onClick={openCreateModal}  className="w-full px-4 py-2.5 bg-linear-to-r from-indigo-500 to-indigo-600 hover:from-indigo-600 hover:to-indigo-700 rounded-xl font-semibold text-sm transition-all duration-300 hover:shadow-lg hover:shadow-indigo-500/50 hover:-translate-y-0.5 active:translate-y-0 flex items-center justify-center gap-2">
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                </svg>
-                New Project
-              </button>
+                </button>
+              )}
             </div>
 
+            {/* New Project Button */}
+            <div className="p-3">
+              {leftSidebarOpen ? (
+                <button 
+                  onClick={openCreateModal}
+                  className="w-full px-3 py-2 bg-indigo-600 hover:bg-indigo-700 rounded-lg font-medium text-sm transition-all duration-300 flex items-center justify-center gap-2"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                  </svg>
+                  New Project
+                </button>
+              ) : (
+                <button 
+                  onClick={openCreateModal}
+                  className="w-10 h-10 bg-indigo-600 hover:bg-indigo-700 rounded-lg transition-all duration-300 flex items-center justify-center mx-auto group relative"
+                  title="New project"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                  </svg>
+                  <div className="absolute left-full ml-2 px-2 py-1 bg-black/90 text-white text-xs rounded whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
+                    New project
+                  </div>
+                </button>
+              )}
+            </div>
+
+            {/* Search */}
+            {leftSidebarOpen && (
+              <div className="px-3 pb-3">
+                <div className="relative">
+                  <input
+                    type="text"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder="Search projects..."
+                    className="w-full px-3 py-2 pl-9 bg-white/5 border border-white/10 rounded-lg text-sm focus:outline-none focus:border-indigo-500/50 focus:bg-white/8 transition-all"
+                  />
+                  <svg className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-white/40" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                  </svg>
+                </div>
+              </div>
+            )}
+            {!leftSidebarOpen && (
+              <div className="px-3 pb-3">
+                <button 
+                  onClick={() => setLeftSidebarOpen(true)}
+                  className="w-10 h-10 bg-white/10 hover:bg-white/15 rounded-lg transition-all duration-300 flex items-center justify-center mx-auto group relative"
+                  title="Search projects"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                  </svg>
+                  <div className="absolute left-full ml-2 px-2 py-1 bg-black/90 text-white text-xs rounded whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
+                    Search
+                  </div>
+                </button>
+              </div>
+            )}
+
             {/* Projects List */}
+            {leftSidebarOpen && (
             <div className="flex-1 overflow-y-auto scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent">
               <div className="p-3 space-y-2">
-                {projects.map((project, idx) => (
+                {projects
+                  .filter(project => 
+                    project.name.toLowerCase().includes(searchQuery.toLowerCase())
+                  )
+                  .map((project, idx) => (
                   <div 
                     key={project.id}
                     className="group animate-slide-in-left"
@@ -586,37 +672,60 @@ export default function UICodeGenerator({ initialProjects = [], user }) {
                 ))}
               </div>
             </div>
+            )}
 
             {/* User Profile Section - Bottom */}
-            <div className="p-3 border-t border-white/10 relative z-50">
-              <button
-                onClick={() => setShowProfileMenu(!showProfileMenu)}
-                className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-white/5 transition-all duration-300 group"
-              >
-                <div className="w-10 h-10 rounded-full overflow-hidden bg-white/10 border border-white/20 shrink-0">
-                  {user?.image ? (
-                    <img src={user.image} alt={user.name || 'User'} className="w-full h-full object-cover" />
-                  ) : (
-                    <div className="w-full h-full flex items-center justify-center bg-linear-to-br from-indigo-500 to-pink-500 text-white font-semibold">
-                      {user?.name?.[0]?.toUpperCase() || 'U'}
-                    </div>
-                  )}
-                </div>
-                <div className="flex-1 text-left min-w-0">
-                  <div className="font-semibold text-sm truncate">{user?.name || 'User'}</div>
-                  <div className="text-xs text-white/40">Free</div>
-                </div>
-                <svg 
-                  className={`w-4 h-4 text-white/40 transition-transform duration-200 ${
-                    showProfileMenu ? 'rotate-180' : ''
-                  }`} 
-                  fill="none" 
-                  stroke="currentColor" 
-                  viewBox="0 0 24 24"
+            <div className={`mt-auto border-t border-white/10 relative z-50 ${leftSidebarOpen ? 'p-3' : 'p-2'}`}>
+              {leftSidebarOpen ? (
+                <button
+                  onClick={() => setShowProfileMenu(!showProfileMenu)}
+                  className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-white/5 transition-all duration-300 group"
                 >
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                </svg>
-              </button>
+                  <div className="w-10 h-10 rounded-full overflow-hidden bg-white/10 border border-white/20 shrink-0">
+                    {user?.image ? (
+                      <img src={user.image} alt={user.name || 'User'} className="w-full h-full object-cover" />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center bg-linear-to-br from-indigo-500 to-pink-500 text-white font-semibold">
+                        {user?.name?.[0]?.toUpperCase() || 'U'}
+                      </div>
+                    )}
+                  </div>
+                  <div className="flex-1 text-left min-w-0">
+                    <div className="font-semibold text-sm truncate">{user?.name || 'User'}</div>
+                    <div className="text-xs text-white/40">Free</div>
+                  </div>
+                  <svg 
+                    className={`w-4 h-4 text-white/40 transition-transform duration-200 ${
+                      showProfileMenu ? 'rotate-180' : ''
+                    }`} 
+                    fill="none" 
+                    stroke="currentColor" 
+                    viewBox="0 0 24 24"
+                  >
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                  </svg>
+                </button>
+              ) : (
+                <div className="relative group">
+                  <button
+                    onClick={() => setShowProfileMenu(!showProfileMenu)}
+                    className="w-full flex items-center justify-center p-2 rounded-xl hover:bg-white/5 transition-all duration-300"
+                  >
+                    <div className="w-10 h-10 rounded-full overflow-hidden bg-white/10 border border-white/20 shrink-0">
+                      {user?.image ? (
+                        <img src={user.image} alt={user.name || 'User'} className="w-full h-full object-cover" />
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center bg-linear-to-br from-indigo-500 to-pink-500 text-white font-semibold">
+                          {user?.name?.[0]?.toUpperCase() || 'U'}
+                        </div>
+                      )}
+                    </div>
+                  </button>
+                  <div className="absolute left-full ml-2 bottom-0 px-3 py-2 bg-[#1a1a2e] text-white text-xs rounded-lg border border-white/10 whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none">
+                    {user?.name || 'User'}
+                  </div>
+                </div>
+              )}
 
               {/* Profile Dropdown Menu */}
               {showProfileMenu && (
@@ -669,43 +778,10 @@ export default function UICodeGenerator({ initialProjects = [], user }) {
               )}
             </div>
           </div>
-
-          {/* Toggle Button */}
-          <button
-            onClick={() => setLeftSidebarOpen(!leftSidebarOpen)}
-            className="absolute -right-3 top-6 w-6 h-6 bg-white/10 backdrop-blur-xl border border-white/20 rounded-full flex items-center justify-center hover:bg-white/20 transition-all duration-300 hover:scale-110 z-20"
-          >
-            <svg 
-              className={`w-3 h-3 transition-transform duration-300 ${!leftSidebarOpen && 'rotate-180'}`} 
-              fill="none" 
-              stroke="currentColor" 
-              viewBox="0 0 24 24"
-            >
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-            </svg>
-          </button>
         </div>
 
         {/* CENTER - Chat Interface */}
         <div className="flex-1 flex flex-col min-w-0 relative">
-          {/* Top Bar */}
-          <div className="h-16 bg-white/5 backdrop-blur-xl border-b border-white/10 flex items-center justify-between px-6">
-            <div className="flex items-center gap-4">
-              <h2 className="font-syne font-bold text-xl bg-linear-to-r from-white to-white/70 bg-clip-text text-transparent">
-                {currentProject?.name || 'Select a Project'}
-              </h2>
-              {currentProject && (
-                <span className="text-sm text-white/40">
-                  {currentProject.components.reduce((sum, c) => sum + c.versions.length, 0)} versions
-                </span>
-              )}
-            </div>
-
-            <div className="flex items-center gap-2">
-              {/* Logout button removed - now in profile menu */}
-            </div>
-          </div>
-
           {/* Messages Area */}
           <div className="flex-1 overflow-y-auto px-6 py-6 pb-40 scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent">
             <div className="max-w-4xl mx-auto space-y-4">
@@ -763,26 +839,8 @@ export default function UICodeGenerator({ initialProjects = [], user }) {
             )}
 
             <div className="max-w-4xl mx-auto px-6 relative">
-              
-              {/* --- IMAGE PREVIEW (Before Sending) --- */}
-              {selectedImage && (
-                <div className="absolute -top-24 left-0 bg-[#1a1a2e] border border-white/10 p-2 rounded-xl flex items-center gap-3 shadow-xl animate-fade-in-up">
-                  <div className="h-16 w-16 rounded-lg overflow-hidden relative border border-white/10">
-                    <img src={selectedImage} alt="Preview" className="w-full h-full object-cover" />
-                  </div>
-                  <div className="flex flex-col">
-                    <span className="text-xs text-white/70 font-medium">Image attached</span>
-                    <button 
-                      onClick={() => setSelectedImage(null)}
-                      className="text-xs text-red-400 hover:text-red-300 transition-colors text-left"
-                    >
-                      Remove
-                    </button>
-                  </div>
-                </div>
-              )}
 
-              <div className="relative">
+              <div className="relative bg-[#1a1a2e]/95 border border-white/10 rounded-2xl shadow-2xl focus-within:border-indigo-500/50 focus-within:ring-4 focus-within:ring-indigo-500/10 transition-all duration-300">
                 {/* Hidden File Input */}
                 <input 
                   type="file" 
@@ -792,19 +850,39 @@ export default function UICodeGenerator({ initialProjects = [], user }) {
                   className="hidden"
                 />
 
+                {/* Image Preview - Inside Input Bar (Gemini Style) */}
+                {selectedImage && (
+                  <div className="px-4 pt-3">
+                    <div className="inline-flex items-center gap-2 bg-white/5 border border-white/10 rounded-lg p-1.5 pr-2">
+                      <div className="h-10 w-10 rounded-md overflow-hidden relative shrink-0">
+                        <img src={selectedImage} alt="Preview" className="w-full h-full object-cover" />
+                      </div>
+                      <span className="text-xs text-white/60 max-w-[100px] truncate">Image</span>
+                      <button 
+                        onClick={() => setSelectedImage(null)}
+                        className="w-5 h-5 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center transition-colors shrink-0"
+                      >
+                        <svg className="w-3 h-3 text-white/70" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                      </button>
+                    </div>
+                  </div>
+                )}
+
                 <textarea
                   value={inputValue}
                   onChange={(e) => setInputValue(e.target.value)}
-                  onPaste={handlePaste} // <--- Add Paste Handler
+                  onPaste={handlePaste}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter' && !e.shiftKey) {
                       e.preventDefault();
                       handleSendMessage();
                     }
                   }}
-                  placeholder="Describe your UI or paste a screenshot..." // Update placeholder
-                  className="w-full bg-[#1a1a2e]/95 border border-white/10 rounded-2xl px-5 py-4 pr-32 text-sm resize-none focus:outline-none focus:border-indigo-500/50 focus:bg-[#1a1a2e] focus:ring-4 focus:ring-indigo-500/10 transition-all duration-300 scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent placeholder:text-white/30 shadow-2xl"
-                  rows={3}
+                  placeholder="Describe your UI or paste a screenshot..."
+                  className={`w-full bg-transparent px-5 py-4 pr-32 text-sm resize-none focus:outline-none scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent placeholder:text-white/30 ${selectedImage ? 'pt-2' : ''}`}
+                  rows={2}
                 />
                 <div className="absolute right-3 bottom-3 flex items-center gap-2">
                   {/* Paperclip Icon (Unused for now) */}
@@ -841,15 +919,39 @@ export default function UICodeGenerator({ initialProjects = [], user }) {
         </div>
 
         {/* RIGHT SIDEBAR - Code Versions */}
-        <div className={`transition-all duration-300 ease-out ${rightSidebarOpen ? 'w-96' : 'w-0'} relative`}>
-          <div className={`h-full bg-white/5 backdrop-blur-xl border-l border-white/10 flex flex-col overflow-hidden ${!rightSidebarOpen && 'invisible'}`}>
-            {/* Header */}
-            <div className="p-4 border-b border-white/10 bg-linear-to-l from-indigo-500/10 to-pink-500/10">
-              <h3 className="font-syne font-bold text-lg mb-1">Versions</h3>
-              <p className="text-xs text-white/50">Code history & variants</p>
-            </div>
+        <div className={`transition-all duration-300 ease-out ${rightSidebarOpen ? 'w-96' : 'w-16'} relative shrink-0`}>
+          <div className="h-full bg-white/5 backdrop-blur-xl border-l border-white/10 flex flex-col">
+            {/* Header / Toggle */}
+            {rightSidebarOpen ? (
+              <div className="p-4 border-b border-white/10 bg-linear-to-l from-indigo-500/10 to-pink-500/10 flex items-center justify-between">
+                <div>
+                  <h3 className="font-syne font-bold text-lg mb-1">Versions</h3>
+                  <p className="text-xs text-white/50">Code history & variants</p>
+                </div>
+                <button
+                  onClick={() => setRightSidebarOpen(false)}
+                  className="p-2 hover:bg-white/10 rounded-lg transition-colors"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+                  </svg>
+                </button>
+              </div>
+            ) : (
+              <div className="p-3 border-b border-white/10 flex items-center justify-center">
+                <button
+                  onClick={() => setRightSidebarOpen(true)}
+                  className="p-2 hover:bg-white/10 rounded-lg transition-colors"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+                  </svg>
+                </button>
+              </div>
+            )}
 
             {/* Versions List */}
+            {rightSidebarOpen && (
             <div className="flex-1 overflow-y-auto scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent">
               <div className="p-3 space-y-4">
                 {currentProject?.components.map((component, compIdx) => (
@@ -916,22 +1018,8 @@ export default function UICodeGenerator({ initialProjects = [], user }) {
                 ))}
               </div>
             </div>
+            )}
           </div>
-
-          {/* Toggle Button */}
-          <button
-            onClick={() => setRightSidebarOpen(!rightSidebarOpen)}
-            className="absolute -left-3 top-6 w-6 h-6 bg-white/10 backdrop-blur-xl border border-white/20 rounded-full flex items-center justify-center hover:bg-white/20 transition-all duration-300 hover:scale-110 z-20"
-          >
-            <svg 
-              className={`w-3 h-3 transition-transform duration-300 ${!rightSidebarOpen && 'rotate-180'}`} 
-              fill="none" 
-              stroke="currentColor" 
-              viewBox="0 0 24 24"
-            >
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-            </svg>
-          </button>
         </div>
       </div>
 
