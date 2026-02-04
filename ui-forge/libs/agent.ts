@@ -18,7 +18,7 @@ function sanitizeUserInput(input: string): string {
     // Instruction override attempts
     /ignore (all )?(previous|above|prior|the|your|system)? ?instructions?/gi,
     /disregard (all )?(previous|above|prior|the|your|system)? ?instructions?/gi,
-    /forget (all |about |about all )?(previous|above|prior|the|your|system)? ?instructions?/gi,
+    /forget (all |about |about all )?(previous|above|prior|past|the|your|system)? ?instructions?/gi,
     /skip (all )?(previous|above|prior|the|your)? ?instructions?/gi,
     /bypass (all )?(previous|above|prior|the|your)? ?instructions?/gi,
     /don'?t follow (the |your )?instructions?/gi,
@@ -134,6 +134,19 @@ async function quickResponderNode(state: typeof AgentState.State) {
   const { userRequest } = state;
   const client = getClient();
   console.log("💬 QUICK RESPONDER: Handling non-coding question...");
+
+  // HARDCODED CHECK: If input contains filtered content or asks for jokes, refuse immediately
+  const lowerRequest = userRequest.toLowerCase();
+  const isJokeRequest = /\b(joke|jokes|funny|humor|laugh|comedy|riddle|pun)\b/i.test(lowerRequest);
+  const hasFilteredContent = userRequest.includes('[FILTERED]');
+  
+  if (isJokeRequest || hasFilteredContent) {
+    console.log("🚫 Joke/manipulation attempt detected - returning canned response");
+    return { 
+      reply: "I'm UI Forge, specialized in UI design and code generation. I can't help with jokes or entertainment. Would you like me to help you build a UI component or convert a design to code?",
+      finalCode: "" 
+    };
+  }
 
   const systemPrompt = `You are "UI Forge", an AI assistant EXCLUSIVELY for UI/UX design and code generation.
 
