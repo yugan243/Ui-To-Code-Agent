@@ -59,6 +59,8 @@ export default function UICodeGenerator({ initialProjects = [], user }) {
   const [collapsedFiles, setCollapsedFiles] = useState(new Set()); // Track collapsed file groups
   const [showProfileMenu, setShowProfileMenu] = useState(false); // Track profile menu visibility
   const [searchQuery, setSearchQuery] = useState(''); // Search projects
+  const [typingText, setTypingText] = useState(''); // For typing animation
+  const [isTyping, setIsTyping] = useState(false); // Typing state
   
   // Auto-logout after 5 minutes of inactivity
   useEffect(() => {
@@ -309,6 +311,7 @@ export default function UICodeGenerator({ initialProjects = [], user }) {
     let userText = inputValue;
     let imagePayload = selectedImage; 
     let currentFileId = activeFileId;
+    let uploadedImageUrl = null; // Track the Cloudinary URL for saving to DB
 
     setInputValue(''); 
     setSelectedImage(null); 
@@ -328,6 +331,7 @@ export default function UICodeGenerator({ initialProjects = [], user }) {
         const uploadRes = await uploadImage(imagePayload);
         
         if (uploadRes.success) {
+           uploadedImageUrl = uploadRes.url; // Save the Cloudinary URL
            const fileRes = await createUIFile(activeProject, uploadRes.url);
            
            if (fileRes.success) {
@@ -365,27 +369,68 @@ export default function UICodeGenerator({ initialProjects = [], user }) {
          }
       }
 
-      // Save Message to DB (Pass URL if new upload, otherwise null)
-      // Note: We use 'selectedImage' check to ensure we only save URL if it's a FRESH upload
-      await saveUserMessage(activeProject, userText, 'USER', selectedImage ? activeProject?.components?.find(c => c.id === currentFileId)?.referenceImageUrl : null); 
+      // Save Message to DB with the Cloudinary URL (if image was uploaded)
+      await saveUserMessage(activeProject, userText, 'USER', uploadedImageUrl); 
 
       const tempAiId = Date.now() + 1;
       setMessages(prev => [...prev, { 
         id: tempAiId, 
         role: 'assistant', 
-        content: 'Analyzing context & generating...' 
+        content: '',
+        isGenerating: true
       }]);
+
+      // Progressive status updates with typing effect
+      const stages = [
+        { emoji: '🧠', text: 'Extracting design system and planning...', duration: 3000 },
+        { emoji: '👨\u200d💻', text: 'Writing pixel-perfect HTML with Tailwind...', duration: 5000 },
+        { emoji: '🕵️', text: 'Polishing and fixing...', duration: 2000 }
+      ];
+
+      let currentStage = 0;
+      const typeMessage = async (text, messageId) => {
+        setIsTyping(true);
+        for (let i = 0; i <= text.length; i++) {
+          setMessages(prev => prev.map(msg => 
+            msg.id === messageId 
+              ? { ...msg, content: text.substring(0, i) }
+              : msg
+          ));
+          await new Promise(resolve => setTimeout(resolve, 20));
+        }
+        setIsTyping(false);
+      };
+
+      // Start first stage immediately
+      typeMessage(`${stages[0].emoji} ${stages[0].text}`, tempAiId);
 
       const currentCode = activeVersionData?.code || "";
       
-      // Call AI with the Image Payload (New or Cached)
-      // Pass currentFileId so version is saved to the correct file
-      const result = await generateComponent(activeProject, userText, imagePayload, currentCode, currentFileId);
+      // Start generation and update stages
+      const generationPromise = generateComponent(activeProject, userText, imagePayload, currentCode, currentFileId);
+      
+      // Update to stage 2 after delay
+      setTimeout(() => {
+        if (currentStage < 1) {
+          currentStage = 1;
+          typeMessage(`${stages[1].emoji} ${stages[1].text}`, tempAiId);
+        }
+      }, stages[0].duration);
+      
+      // Update to stage 3 after delay
+      setTimeout(() => {
+        if (currentStage < 2) {
+          currentStage = 2;
+          typeMessage(`${stages[2].emoji} ${stages[2].text}`, tempAiId);
+        }
+      }, stages[0].duration + stages[1].duration);
+      
+      const result = await generationPromise;
 
       if (result.success) {
         setMessages(prev => prev.map(msg => 
           msg.id === tempAiId 
-            ? { ...msg, content: "Generated! Check the preview." } 
+            ? { ...msg, content: "✅ Generated! Check the preview.", isGenerating: false } 
             : msg
         ));
 
@@ -800,7 +845,22 @@ export default function UICodeGenerator({ initialProjects = [], user }) {
                       ? 'bg-white/5 border border-white/10' 
                       : 'bg-linear-to-r from-indigo-500/20 to-pink-500/20 border border-indigo-500/30'
                   }`}>
-                    <p className="text-sm leading-relaxed">{message.content}</p>
+                    {/* Show image if attached (Claude-style) */}
+                    {message.image && (
+                      <div className="mb-3 rounded-lg overflow-hidden border border-white/10">
+                        <img 
+                          src={message.image} 
+                          alt="Attached" 
+                          className="max-w-xs h-auto max-h-32 object-contain bg-black/20"
+                        />
+                      </div>
+                    )}
+                    <p className="text-sm leading-relaxed">
+                      {message.content}
+                      {message.isGenerating && (
+                        <span className="inline-block w-1 h-4 ml-1 bg-white/70 animate-pulse"></span>
+                      )}
+                    </p>
                   </div>
                 </div>
               </div>
