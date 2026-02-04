@@ -1,41 +1,39 @@
 /**
  * Next.js Middleware for Route Protection
  * 
- * This middleware runs on EVERY request and:
- * - Protects routes that require authentication
- * - Redirects unauthenticated users to login
- * - Redirects authenticated users away from login page
- * 
- * Matcher config ensures it only runs on specific routes
+ * Lightweight middleware that checks for session token cookie
+ * without importing the full auth library (keeps bundle under 1MB)
  */
 
-import { auth } from "@/libs/auth";
 import { NextResponse } from "next/server";
+import type { NextRequest } from "next/server";
 
-export default auth((req) => {
+export function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
-  const isLoggedIn = !!req.auth;
+  
+  // Check for NextAuth session token (works for both dev and prod)
+  const token = req.cookies.get("authjs.session-token") || 
+                req.cookies.get("__Secure-authjs.session-token");
+  const isLoggedIn = !!token;
 
   // Debug logging
-  console.log('[Middleware]', { pathname, isLoggedIn, hasAuth: !!req.auth });
+  console.log('[Middleware]', { pathname, isLoggedIn });
 
-  // Public routes (accessible without login) - only login page
+  // Public routes (accessible without login)
   const isPublicRoute = pathname === '/login';
 
   // If user is logged in and tries to access login, redirect to home
   if (isLoggedIn && pathname === '/login') {
-    console.log('[Middleware] Logged in user accessing /login, redirecting to /');
     return NextResponse.redirect(new URL('/', req.url));
   }
 
   // If user is NOT logged in and tries to access protected route, redirect to login
   if (!isLoggedIn && !isPublicRoute) {
-    console.log('[Middleware] Not logged in, redirecting to /login');
     return NextResponse.redirect(new URL('/login', req.url));
   }
 
   return NextResponse.next();
-});
+}
 
 // Config: Define which routes this middleware runs on
 export const config = {
