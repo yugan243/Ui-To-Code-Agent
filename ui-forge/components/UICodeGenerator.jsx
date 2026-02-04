@@ -320,6 +320,12 @@ export default function UICodeGenerator({ initialProjects = [], user }) {
   const handleSendMessage = async () => {
     if (!inputValue.trim() && !selectedImage) return;
     
+    // 🔥 If no active project, prompt user to create one first
+    if (!activeProject) {
+      setShowCreateModal(true);
+      return;
+    }
+    
     let userText = inputValue;
     let imagePayload = selectedImage; 
     let currentFileId = activeFileId;
