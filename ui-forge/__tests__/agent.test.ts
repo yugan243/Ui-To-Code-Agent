@@ -1,4 +1,4 @@
-import { describe, expect, test, jest, beforeEach } from '@jest/globals';
+import { describe, expect, test, jest } from '@jest/globals';
 
 // Mock the HuggingFace client
 jest.mock('@huggingface/inference', () => ({

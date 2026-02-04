@@ -125,7 +125,7 @@ export async function getProjectChatHistory(projectId: string) {
   // Normalize role to lowercase for UI consistency
   // Database stores as 'USER'/'ASSISTANT' but UI expects 'user'/'assistant'
   // Also map imageUrl to image for UI compatibility
-  return chatSession.messages.map(msg => ({
+  return chatSession.messages.map((msg: { role: string; imageUrl: string | null; id: string; createdAt: Date; content: string }) => ({
     ...msg,
     role: msg.role.toLowerCase(),
     image: msg.imageUrl // Map imageUrl to image for the UI

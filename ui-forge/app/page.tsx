@@ -17,5 +17,6 @@ export default async function HomePage() {
   // 3. Pass data to the Client Component
   // We pass 'projects' so the UI doesn't start empty.
   // We pass 'user' so the UI knows who we are.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   return <UICodeGenerator initialProjects={projects as any} user={session.user} />;
 }

@@ -26,16 +26,21 @@ interface ThemeProviderProps {
 }
 
 export function ThemeProvider({ children, defaultTheme = 'dark' }: ThemeProviderProps) {
-  const [theme, setThemeState] = useState<Theme>(defaultTheme);
+  const [theme, setThemeState] = useState<Theme>(() => {
+    // Initialize from localStorage if available (only runs once)
+    if (typeof window !== 'undefined') {
+      const savedTheme = localStorage.getItem('ui-forge-theme') as Theme | null;
+      if (savedTheme && (savedTheme === 'dark' || savedTheme === 'light')) {
+        return savedTheme;
+      }
+    }
+    return defaultTheme;
+  });
   const [mounted, setMounted] = useState(false);
 
-  // Load theme from localStorage on mount
+  // Set mounted state using queueMicrotask to avoid sync setState warning
   useEffect(() => {
-    setMounted(true);
-    const savedTheme = localStorage.getItem('ui-forge-theme') as Theme | null;
-    if (savedTheme && (savedTheme === 'dark' || savedTheme === 'light')) {
-      setThemeState(savedTheme);
-    }
+    queueMicrotask(() => setMounted(true));
   }, []);
 
   // Apply theme class to document

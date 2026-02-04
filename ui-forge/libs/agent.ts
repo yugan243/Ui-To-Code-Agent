@@ -227,8 +227,10 @@ For EACH visible element, describe:
 
 OUTPUT: Provide complete color palette with hex codes and component specifications.`;
 
-  const messages: any[] = [{ role: "user", content: [{ type: "text", text: systemPrompt }] }];
-  if (imageUrl) messages[0].content.push({ type: "image_url", image_url: { url: imageUrl } });
+  type MessageContent = { type: "text"; text: string } | { type: "image_url"; image_url: { url: string } };
+  const messageContent: MessageContent[] = [{ type: "text", text: systemPrompt }];
+  if (imageUrl) messageContent.push({ type: "image_url", image_url: { url: imageUrl } });
+  const messages = [{ role: "user" as const, content: messageContent }];
 
   const response = await client.chatCompletion({
     model: MODEL_ID,
@@ -370,14 +372,17 @@ Outline: <button class="w-full py-3 bg-[#BTN_BG] border border-[#BTN_BORDER] tex
 
 OUTPUT: Return ONLY the HTML code. Start with <!DOCTYPE html>. No explanations.`;
 
-  const messages: any[] = [
-    { role: "system", content: systemPrompt },
-    { role: "user", content: [{ type: "text", text: "Generate the pixel-perfect HTML using ONLY the colors from the design specification. Match every detail exactly." }] }
-  ];
+  type MessageContent = { type: "text"; text: string } | { type: "image_url"; image_url: { url: string } };
+  const userContent: MessageContent[] = [{ type: "text", text: "Generate the pixel-perfect HTML using ONLY the colors from the design specification. Match every detail exactly." }];
   
   if (imageUrl) {
-    messages[1].content.push({ type: "image_url", image_url: { url: imageUrl } });
+    userContent.push({ type: "image_url", image_url: { url: imageUrl } });
   }
+  
+  const messages = [
+    { role: "system" as const, content: systemPrompt },
+    { role: "user" as const, content: userContent }
+  ];
 
   const response = await client.chatCompletion({
     model: MODEL_ID,
@@ -465,14 +470,17 @@ ${finalCode}
 
 OUTPUT: Start directly with <!DOCTYPE html>. No other text.`;
 
-  const messages: any[] = [
-    { role: "system", content: systemPrompt },
-    { role: "user", content: [{ type: "text", text: "Fix and output the corrected HTML only." }] }
-  ];
+  type MessageContent = { type: "text"; text: string } | { type: "image_url"; image_url: { url: string } };
+  const userContent: MessageContent[] = [{ type: "text", text: "Fix and output the corrected HTML only." }];
 
   if (imageUrl) {
-    messages[1].content.push({ type: "image_url", image_url: { url: imageUrl } });
+    userContent.push({ type: "image_url", image_url: { url: imageUrl } });
   }
+  
+  const messages = [
+    { role: "system" as const, content: systemPrompt },
+    { role: "user" as const, content: userContent }
+  ];
 
   const response = await client.chatCompletion({
     model: MODEL_ID,

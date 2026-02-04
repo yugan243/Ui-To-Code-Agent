@@ -19,7 +19,7 @@ async function checkVersions() {
     console.log(`Project: ${file.session.project.name}`);
     console.log(`  File: ${file.name} (ID: ${file.id})`);
     console.log(`  Versions: ${file.versions.length}`);
-    file.versions.forEach(v => {
+    file.versions.forEach((v: { versionNumber: number; createdAt: Date }) => {
       console.log(`    - v${v.versionNumber}: ${v.createdAt.toLocaleString()}`);
     });
     console.log('');

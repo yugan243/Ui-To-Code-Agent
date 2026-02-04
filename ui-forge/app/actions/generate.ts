@@ -103,8 +103,9 @@ export async function generateComponent(
     revalidatePath(`/`);
     return { success: true, code: generatedCode, versionId: version.id, reply: assistantReply };
 
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("❌ GENERATION FAILED:", error);
-    return { success: false, error: error.message || "Failed to generate code" };
+    const message = error instanceof Error ? error.message : "Failed to generate code";
+    return { success: false, error: message };
   }
 }
