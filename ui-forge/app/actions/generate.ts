@@ -31,6 +31,28 @@ export async function generateComponent(
 
     console.log("✅ Agent Finished. Reply:", result.reply); 
 
+    // Handle non-coding questions (classifier detected it's not a code request)
+    if (!result.finalCode && result.reply) {
+      console.log("💬 Non-coding question - returning reply only");
+      
+      // Save the assistant reply to the chat
+      const chatSession = await prisma.chatSession.findFirst({
+        where: { projectId },
+      });
+      
+      if (chatSession) {
+        await prisma.chatMessage.create({
+          data: {
+            sessionId: chatSession.id,
+            role: "ASSISTANT",
+            content: result.reply,
+          }
+        });
+      }
+      
+      return { success: true, code: null, versionId: null, reply: result.reply };
+    }
+
     if (!result || !result.finalCode) {
         throw new Error("Agent returned no code.");
     }
