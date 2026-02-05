@@ -553,7 +553,7 @@ export default function UICodeGenerator({ initialProjects = [], user }) {
                     className="p-2 hover:bg-white/10 rounded-lg transition-colors group"
                     title="Close sidebar"
                   >
-                    <svg className="w-5 h-5 text-white/60 group-hover:text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg className="w-5 h-5 text-[var(--text-primary)] group-hover:opacity-70" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
                     </svg>
                   </button>
@@ -777,7 +777,7 @@ export default function UICodeGenerator({ initialProjects = [], user }) {
 
               {/* Profile Dropdown Menu */}
               {showProfileMenu && (
-                <div className="absolute bottom-full left-3 right-3 mb-2 bg-[var(--modal-bg)] border border-[var(--border-color)] rounded-2xl shadow-2xl overflow-hidden animate-scale-in z-50">
+                <div className={`absolute bottom-full mb-2 bg-[var(--modal-bg)] border border-[var(--border-color)] rounded-2xl shadow-2xl overflow-hidden animate-scale-in z-[100] ${leftSidebarOpen ? 'left-3 right-3' : 'left-0 w-64'}`}>
                   {/* User Info Header */}
                   <div className="p-4 border-b border-[var(--border-color)] bg-[var(--hover-bg)]">
                     <div className="flex items-center gap-3">
@@ -906,17 +906,56 @@ export default function UICodeGenerator({ initialProjects = [], user }) {
               ? 'top-1/2 -translate-y-1/2' 
               : 'bottom-0'
           }`}>
-            {/* Welcome Message - Only shown when centered */}
-            {!activeProject && messages.length <= 1 && (
-              <div className="text-center mb-8 animate-fade-in">
-                <h2 className="font-syne font-bold text-4xl mb-3 bg-gradient-to-r from-[var(--text-primary)] via-indigo-300 to-pink-300 bg-clip-text text-transparent">
-                  Hi {user?.name?.split(' ')[0] || 'there'}! 👋
-                </h2>
-                <p className="text-[var(--text-secondary)] text-lg">
-                  Let&apos;s turn your UI designs into beautiful code
-                </p>
+          {/* Welcome Message - Enhanced Animation */}
+          {!activeProject && messages.length <= 1 && (
+            <div className="flex flex-col items-center justify-center mb-12 relative z-10 w-full">
+              
+              {/* 1. Ambient Background Glows */}
+              <div className="absolute -top-20 -left-20 w-40 h-40 bg-indigo-500/10 rounded-full blur-3xl animate-pulse-glow pointer-events-none" />
+              <div className="absolute -bottom-20 -right-20 w-40 h-40 bg-pink-500/10 rounded-full blur-3xl animate-pulse-glow pointer-events-none" style={{ animationDelay: '1s' }} />
+
+              {/* 2. Floating Status Badge */}
+              <div className="mb-6 animate-slide-in-up opacity-0" style={{ animationFillMode: 'forwards' }}>
+                <span className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-[var(--surface-secondary)] border border-[var(--border-color)] shadow-lg shadow-indigo-500/10 backdrop-blur-md">
+                  <span className="relative flex h-2 w-2">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+                    <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500"></span>
+                  </span>
+                  <span className="text-xs font-medium bg-gradient-to-r from-indigo-400 to-pink-400 bg-clip-text text-transparent uppercase tracking-wider">
+                    AI Engine Ready
+                  </span>
+                </span>
               </div>
-            )}
+
+              {/* 3. Main Headline with Float Animation */}
+              <h1 className="font-syne font-bold text-5xl md:text-6xl text-center leading-tight mb-6 animate-slide-in-up opacity-0" style={{ animationDelay: '100ms', animationFillMode: 'forwards' }}>
+                <span className="text-[var(--text-primary)]">Dream it. </span>
+                {/* The gradient text floats slowly for a 'breathing' effect */}
+                <span className="bg-gradient-to-r from-indigo-400 via-purple-400 to-pink-400 bg-clip-text text-transparent inline-block animate-float-slow">
+                  Build it.
+                </span>
+              </h1>
+
+              {/* 4. Subtitle with personalized name */}
+              <p className="text-[var(--text-secondary)] text-lg text-center max-w-xl leading-relaxed animate-slide-in-up opacity-0" style={{ animationDelay: '200ms', animationFillMode: 'forwards' }}>
+                Welcome back, <span className="text-[var(--text-primary)] font-medium">{user?.name?.split(' ')[0] || 'Creator'}</span>. 
+                Upload a screenshot or describe your idea to generate <span className="text-indigo-400">production-ready code</span> instantly.
+              </p>
+
+              {/* 5. Floating Code Icons (Decorative) */}
+              <div className="absolute top-1/2 -translate-y-1/2 -left-16 opacity-10 animate-float hidden md:block pointer-events-none">
+                <svg className="w-16 h-16 text-indigo-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
+                </svg>
+              </div>
+              <div className="absolute top-1/2 -translate-y-1/2 -right-16 opacity-10 animate-float-delayed hidden md:block pointer-events-none">
+                <svg className="w-16 h-16 text-pink-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343" />
+                </svg>
+              </div>
+
+            </div>
+          )}
 
             <div className="max-w-4xl mx-auto px-6 relative">
 
