@@ -553,7 +553,7 @@ export default function UICodeGenerator({ initialProjects = [], user }) {
                     className="p-2 hover:bg-white/10 rounded-lg transition-colors group"
                     title="Close sidebar"
                   >
-                    <svg className="w-5 h-5 text-white/60 group-hover:text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg className="w-5 h-5 text-black group-hover:text-gray-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
                     </svg>
                   </button>
@@ -777,7 +777,7 @@ export default function UICodeGenerator({ initialProjects = [], user }) {
 
               {/* Profile Dropdown Menu */}
               {showProfileMenu && (
-                <div className="absolute bottom-full left-3 right-3 mb-2 bg-[var(--modal-bg)] border border-[var(--border-color)] rounded-2xl shadow-2xl overflow-hidden animate-scale-in z-50">
+                <div className={`absolute bottom-full mb-2 bg-[var(--modal-bg)] border border-[var(--border-color)] rounded-2xl shadow-2xl overflow-hidden animate-scale-in z-[100] ${leftSidebarOpen ? 'left-3 right-3' : 'left-0 w-64'}`}>
                   {/* User Info Header */}
                   <div className="p-4 border-b border-[var(--border-color)] bg-[var(--hover-bg)]">
                     <div className="flex items-center gap-3">
